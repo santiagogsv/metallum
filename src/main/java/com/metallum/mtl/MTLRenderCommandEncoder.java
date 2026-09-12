@@ -7,6 +7,9 @@ import org.joml.Vector4fc;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.foreign.MemorySegment;
+import java.nio.IntBuffer;
+import org.lwjgl.PointerBuffer;
+import static java.lang.foreign.ValueLayout.*;
 
 
 @Environment(EnvType.CLIENT)
@@ -124,12 +127,55 @@ public final class MTLRenderCommandEncoder extends MTLCommandEncoder {
         command(18, indexBuffer.nativeOwner().id(device), 0, primitiveType.value, indexCount, indexType.value, offset, instanceCount, baseVertex, baseInstance, 0);
     }
 
-    public void drawIndexedPrimitivesIndirect(final MTLPrimitiveType primitiveType, final MTLIndexType indexType, final MTLBuffer indexBuffer, final MTLBuffer indirectBuffer, final long indirectBufferOffset) {
-        command(19, indexBuffer.nativeOwner().id(device), indirectBuffer.nativeOwner().id(device), primitiveType.value, indexType.value, indirectBufferOffset, 0, 0, 0, 0, 0);
+    public void drawIndexedPrimitivesIndirect(final MTLPrimitiveType primitiveType, final MTLIndexType indexType, final MTLBuffer indexBuffer, final MTLBuffer indirectBuffer, final long indirectBufferOffset, final int drawCount) {
+        command(19, indexBuffer.nativeOwner().id(device), indirectBuffer.nativeOwner().id(device), primitiveType.value, indexType.value, indirectBufferOffset, drawCount, 0, 0, 0, 0);
     }
 
-    public void drawPrimitivesIndirect(final MTLPrimitiveType primitiveType, final MTLBuffer indirectBuffer, final long indirectBufferOffset) {
-        command(20, indirectBuffer.nativeOwner().id(device), 0, primitiveType.value, indirectBufferOffset, 0, 0, 0, 0, 0, 0);
+    public void drawPrimitivesIndirect(final MTLPrimitiveType primitiveType, final MTLBuffer indirectBuffer, final long indirectBufferOffset, final int drawCount) {
+        command(20, indirectBuffer.nativeOwner().id(device), 0, primitiveType.value, indirectBufferOffset, drawCount, 0, 0, 0, 0, 0);
+    }
+
+    private static void record(MemorySegment batch, int slot, long offset, int count, int vertex) {
+        long start = slot * 16L;
+        batch.set(JAVA_LONG, start, offset);
+        batch.set(JAVA_INT, start + 8, count);
+        batch.set(JAVA_INT, start + 12, vertex);
+    }
+
+    public void multiDrawIndexed(MTLPrimitiveType primitive, MTLIndexType type, MTLBuffer indices,
+                                 IntBuffer parameters, int instances, int baseInstance, int drawCount) {
+        if (drawCount < 0 || drawCount > parameters.limit() / 3 || instances < 0 || baseInstance < 0)
+            throw new IllegalArgumentException("Invalid indexed draw parameters");
+        MemorySegment batch = device.indexedDrawScratch();
+        int size = 0;
+        for (int i = 0; i < drawCount; i++) {
+            int count = parameters.get(i * 3 + 1);
+            if (count <= 0) continue;
+            record(batch, size++, (long) parameters.get(i * 3) * type.bytes, count, parameters.get(i * 3 + 2));
+            if (size == NativeMetalDevice.INDEXED_BATCH_CAPACITY) {
+                device.renderIndexedBatch(pass, indices.nativeOwner(), primitive.value, type.value, instances, baseInstance, size);
+                size = 0;
+            }
+        }
+        device.renderIndexedBatch(pass, indices.nativeOwner(), primitive.value, type.value, instances, baseInstance, size);
+    }
+
+    public void multiDrawIndexed(MTLPrimitiveType primitive, MTLIndexType type, MTLBuffer indices,
+                                 PointerBuffer offsets, IntBuffer counts, IntBuffer vertices, int drawCount) {
+        if (drawCount < 0 || drawCount > offsets.remaining() || drawCount > counts.remaining() || drawCount > vertices.remaining())
+            throw new IllegalArgumentException("Invalid indexed draw arrays");
+        MemorySegment batch = device.indexedDrawScratch();
+        int size = 0;
+        for (int i = 0; i < drawCount; i++) {
+            int count = counts.get(counts.position() + i);
+            if (count <= 0) continue;
+            record(batch, size++, offsets.get(offsets.position() + i), count, vertices.get(vertices.position() + i));
+            if (size == NativeMetalDevice.INDEXED_BATCH_CAPACITY) {
+                device.renderIndexedBatch(pass, indices.nativeOwner(), primitive.value, type.value, 1, 0, size);
+                size = 0;
+            }
+        }
+        device.renderIndexedBatch(pass, indices.nativeOwner(), primitive.value, type.value, 1, 0, size);
     }
 
     public void updateFence(final MTLFence fence, final MTLRenderStages stages) {

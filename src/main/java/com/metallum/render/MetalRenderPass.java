@@ -194,6 +194,13 @@ final class MetalRenderPass implements RenderPassBackend {
         MTLRenderCommandEncoder enc = renderEncoder();
         bindDrawState(enc);
 
+        if (drawCount < 0 || drawCount > drawParameters.limit() / 3)
+            throw new IllegalArgumentException("Invalid indexed draw count");
+        if (primitiveTopology() != MTLPrimitiveType.TriangleFan) {
+            enc.multiDrawIndexed(primitiveTopology(), indexType, nativeIndexBuffer.metalBuffer(),
+                    drawParameters, instanceCount, firstInstance, drawCount);
+            return;
+        }
         for (int i = 0; i < drawCount; i++) {
             int firstIndex = drawParameters.get(i * 3);
             int indexCount = drawParameters.get(i * 3 + 1);
@@ -215,19 +222,8 @@ final class MetalRenderPass implements RenderPassBackend {
         MTLRenderCommandEncoder enc = renderEncoder();
         bindDrawState(enc);
 
-        MTLBuffer indexBufferHandle = nativeIndexBuffer.metalBuffer();
-        MemorySegment offsets = MemorySegment.ofAddress(org.lwjgl.system.MemoryUtil.memAddress(firstIndexOffsets)).reinterpret(drawCount * 8L);
-        MemorySegment counts = MemorySegment.ofAddress(org.lwjgl.system.MemoryUtil.memAddress(indexCounts)).reinterpret(drawCount * 4L);
-        MemorySegment vertices = MemorySegment.ofAddress(org.lwjgl.system.MemoryUtil.memAddress(vertexOffsets)).reinterpret(drawCount * 4L);
-        for (int i = 0; i < drawCount; i++) {
-            int indexCount = counts.get(ValueLayout.JAVA_INT, i * 4L);
-            if (indexCount <= 0) {
-                continue;
-            }
-            long firstIndexOffset = offsets.get(ValueLayout.JAVA_LONG, i * 8L);
-            int baseVertex = vertices.get(ValueLayout.JAVA_INT, i * 4L);
-            enc.drawIndexedPrimitives(primitiveType, indexCount, indexType, indexBufferHandle, firstIndexOffset, 1, baseVertex, 0);
-        }
+        enc.multiDrawIndexed(primitiveType, indexType, nativeIndexBuffer.metalBuffer(),
+                firstIndexOffsets, indexCounts, vertexOffsets, drawCount);
     }
 
     @Override
@@ -243,11 +239,8 @@ final class MetalRenderPass implements RenderPassBackend {
 
         MTLBuffer indexBufferHandle = nativeIndexBuffer.metalBuffer();
         MTLBuffer indirectBuffer = ((MetalGpuBuffer) commands.buffer()).metalBuffer();
-        long indirectOffset = commands.offset();
-        for (int i = 0; i < drawCount; i++) {
-            enc.drawIndexedPrimitivesIndirect(primitiveType, indexType, indexBufferHandle, indirectBuffer, indirectOffset);
-            indirectOffset += MetalIndirectArguments.INDEXED_SIZE;
-        }
+        validateIndirectRange(commands, drawCount, MetalIndirectArguments.INDEXED_SIZE);
+        enc.drawIndexedPrimitivesIndirect(primitiveType, indexType, indexBufferHandle, indirectBuffer, commands.offset(), drawCount);
     }
 
     @Override
@@ -315,11 +308,13 @@ final class MetalRenderPass implements RenderPassBackend {
         bindDrawState(enc);
 
         MTLBuffer indirectBuffer = ((MetalGpuBuffer) commands.buffer()).metalBuffer();
-        long indirectOffset = commands.offset();
-        for (int i = 0; i < drawCount; i++) {
-            enc.drawPrimitivesIndirect(primitiveType, indirectBuffer, indirectOffset);
-            indirectOffset += MetalIndirectArguments.SIZE;
-        }
+        validateIndirectRange(commands, drawCount, MetalIndirectArguments.SIZE);
+        enc.drawPrimitivesIndirect(primitiveType, indirectBuffer, commands.offset(), drawCount);
+    }
+
+    private static void validateIndirectRange(GpuBufferSlice commands, int count, int stride) {
+        if (count < 0 || (long) count * stride > commands.length())
+            throw new IllegalArgumentException("Indirect batch exceeds command slice");
     }
 
     @Override

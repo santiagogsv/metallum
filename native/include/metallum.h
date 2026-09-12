@@ -101,6 +101,12 @@ uint64_t metallum_render_pass_create(void *context, uint64_t command, uint64_t c
  * Inline bytes use metallum_render_bytes. See MetalDraws.swift.
  * Returns 1 on success, 0 for invalid IDs/opcodes/arguments. */
 int32_t metallum_render_command(void *context, uint64_t pass, uint32_t op, uint64_t p0, uint64_t p1, const int64_t *words);
+/* ABI 17: indexed batch, consumed synchronously, at most 256 records.
+ * words: primitive, index type, instance count, base instance (four int64_t).
+ * Each 16-byte record: int64_t byte offset, int32_t count, int32_t base vertex.
+ * Render ops 19/20 now require draw counts in words[3]/words[2], respectively. */
+int32_t metallum_render_indexed_batch(void *context, uint64_t pass, uint64_t indices,
+                                    const int64_t *words, const void *records, uint32_t count);
 uint64_t metallum_layer_create(void *context, double scale);
 int32_t metallum_layer_configure(void *context, uint64_t layer, double width, double height, uint32_t immediate);
 /* Acquires and encodes the drawable entirely in Swift. Submission performs the

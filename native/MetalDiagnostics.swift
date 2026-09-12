@@ -52,7 +52,7 @@ public func metallumDiagnosticsSnapshot(_ handle: UnsafeMutableRawPointer?, _ ou
         let values = context.counters.drain() + [UInt64(active.count), UInt64(context.idleCommandSlots.count),
             staging, allocator, active.reduce(0) { $0 + $1.referenceCount },
             UInt64(active.filter { $0.hasResidency }.count), UInt64(context.idleResidencySets.count), context.counters.allocatorTrims,
-            context.spatialScaler.map { UInt64($0.input.allocatedSize + $0.output.allocatedSize) } ?? 0]
+            context.spatialScaler.map { UInt64(($0.input?.allocatedSize ?? 0) + ($0.output?.allocatedSize ?? 0)) } ?? 0]
         context.counters.allocatorTrims = 0
         for (i, value) in values.enumerated() { output[i] = value }
     }

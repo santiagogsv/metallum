@@ -195,6 +195,23 @@ struct ResourceDescriptorSmoke {
             }
             precondition(released == nil)
         }
+        precondition(!SpatialTexturePolicy.needsCopy([.shaderRead, .renderTarget], .shaderRead, .private))
+        precondition(!SpatialTexturePolicy.needsCopy([.shaderRead, .renderTarget], [.shaderRead, .renderTarget], .private))
+        precondition(SpatialTexturePolicy.needsCopy(.shaderRead, [.shaderRead, .shaderWrite], .private))
+        precondition(SpatialTexturePolicy.needsCopy([.shaderRead, .shaderWrite], .shaderWrite, .shared))
+
+        precondition(DrawBatchPolicy.indexRange(offset: 4, count: 6, indexBytes: 2, length: 16))
+        precondition(!DrawBatchPolicy.indexRange(offset: 4, count: 7, indexBytes: 2, length: 16))
+        precondition(!DrawBatchPolicy.indexRange(offset: 2, count: 1, indexBytes: 4, length: 16))
+        precondition(!DrawBatchPolicy.indexRange(offset: -4, count: 1, indexBytes: 4, length: 16))
+        precondition(!DrawBatchPolicy.indexRange(offset: Int64.max, count: Int32.max, indexBytes: 4, length: 16))
+        precondition(DrawBatchPolicy.indirectRange(offset: 20, count: 3, stride: 20, length: 80))
+        precondition(!DrawBatchPolicy.indirectRange(offset: 20, count: 4, stride: 20, length: 80))
+        precondition(!DrawBatchPolicy.indirectRange(offset: 2, count: 1, stride: 16, length: 80))
+        precondition(!DrawBatchPolicy.indirectRange(offset: 0, count: Int64.max, stride: 20, length: 80))
+        precondition(!DrawBatchPolicy.indirectRange(offset: 0, count: -1, stride: 16, length: 80))
+        precondition(DrawBatchPolicy.indirectRange(offset: 80, count: 0, stride: 16, length: 80))
+
         let copy = try! CopyDescription([0, 1, 2, 8, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 8])
         precondition(copy[3] == 8 && copy[9] == 16 && copy.range(8, 8, 16))
         precondition(!copy.range(8, 9, 16) && !copy.range(17, 0, 16))

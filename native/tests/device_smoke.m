@@ -9,7 +9,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 16);
+        assert(metallum_abi_version() == 17);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -121,7 +121,18 @@ int main(void) {
             for (int bind = 0; bind < 20; ++bind)
                 assert(metallum_render_bytes(context, draw_pass, inline_data, sizeof(inline_data), 0) == 1);
             memset(inline_data, 0, sizeof(inline_data));
-            assert(metallum_render_command(context, draw_pass, 17, 0, 0, triangle_words) == 1);
+            uint64_t batch_indices = metallum_buffer_create(context, 8, 1);
+            uint16_t index_data[] = {99, 1, 2, 3};
+            memcpy(metallum_buffer_contents(context, batch_indices), index_data, sizeof(index_data));
+            struct { int64_t offset; int32_t count, vertex; } records[] = {{0, 0, 0}, {2, 3, -1}};
+            _Static_assert(sizeof(records[0]) == 16, "Indexed batch layout changed");
+            int64_t batch_words[] = {MTLPrimitiveTypeTriangle, MTLIndexTypeUInt16, 1, 0};
+            records[1].offset = 4; // Would overrun the index buffer.
+            assert(metallum_render_indexed_batch(context, draw_pass, batch_indices, batch_words, records, 2) == 0);
+            records[1].offset = 2;
+            assert(metallum_render_indexed_batch(context, draw_pass, batch_indices, batch_words, records, 257) == 0);
+            assert(metallum_render_indexed_batch(context, draw_pass, batch_indices, batch_words, records, 2) == 1);
+            memset(records, 0, sizeof(records)); // Encoding must have consumed CPU scratch already.
             assert(metallum_render_command(context, draw_pass, 99, 0, 0, triangle_words) == 0);
             metallum_resource_destroy(context, draw_pass);
             assert(metallum_render_command(context, draw_pass, 17, 0, 0, triangle_words) == 0);
@@ -133,8 +144,32 @@ int main(void) {
             assert(metallum_render_command(context, green_pass, 15, 0, 0, draw_words) == 1);
             float green[] = {0, 1, 0, 1};
             assert(metallum_render_bytes(context, green_pass, green, sizeof(green), 0) == 1);
-            assert(metallum_render_command(context, green_pass, 17, 0, 0, triangle_words) == 1);
+            uint64_t indexed_arguments = metallum_buffer_create(context, 40, 1);
+            MTLDrawIndexedPrimitivesIndirectArguments indexed_draws[] = {{0, 1, 0, 0, 0}, {3, 1, 1, -1, 0}};
+            memcpy(metallum_buffer_contents(context, indexed_arguments), indexed_draws, sizeof(indexed_draws));
+            int64_t indexed_words[8] = {MTLPrimitiveTypeTriangle, MTLIndexTypeUInt16, 0, 3};
+            assert(metallum_render_command(context, green_pass, 19, batch_indices, indexed_arguments, indexed_words) == 0);
+            indexed_words[3] = 2;
+            assert(metallum_render_command(context, green_pass, 19, batch_indices, indexed_arguments, indexed_words) == 1);
+            metallum_buffer_destroy(context, batch_indices);
+            metallum_buffer_destroy(context, indexed_arguments);
             metallum_resource_destroy(context, green_pass);
+            uint64_t blue_texture = metallum_texture_create(context, MTLPixelFormatRGBA8Unorm, 8, 8, 1, 1, 0, 1, NULL);
+            uint64_t blue_pass = metallum_render_pass_create(context, draw_command, blue_texture, 0, 2, 0, draw_clear);
+            assert(metallum_render_command(context, blue_pass, 0, pipeline, 0, draw_words) == 1);
+            assert(metallum_render_command(context, blue_pass, 15, 0, 0, draw_words) == 1);
+            float blue[] = {0, 0, 1, 1};
+            assert(metallum_render_bytes(context, blue_pass, blue, sizeof(blue), 0) == 1);
+            uint64_t arguments = metallum_buffer_create(context, 32, 1);
+            MTLDrawPrimitivesIndirectArguments draws[] = {{0, 1, 0, 0}, {3, 1, 0, 0}};
+            memcpy(metallum_buffer_contents(context, arguments), draws, sizeof(draws));
+            int64_t indirect_words[8] = {MTLPrimitiveTypeTriangle, 0, 3};
+            assert(metallum_render_command(context, blue_pass, 20, arguments, 0, indirect_words) == 0);
+            indirect_words[2] = 2;
+            assert(metallum_render_command(context, blue_pass, 20, arguments, 0, indirect_words) == 1);
+            metallum_resource_destroy(context, blue_pass);
+            metallum_buffer_destroy(context, arguments);
+            uint64_t blue_pixels = metallum_buffer_create(context, 256, 1);
             uint64_t red_pixels = metallum_buffer_create(context, 256, 1);
             uint64_t green_pixels = metallum_buffer_create(context, 256, 1);
             uint64_t pixel_fence = metallum_fence_create(context);
@@ -142,6 +177,9 @@ int main(void) {
             uint64_t green_copy[] = {2, green_texture, green_pixels, 0,0,0,0,8,8,0,0,0,0,32,256,0};
             assert(metallum_copy_pass(context, draw_command, pixel_fence, red_copy, 16, shader_error, sizeof(shader_error)) == 1);
             assert(metallum_copy_pass(context, draw_command, pixel_fence, green_copy, 16, shader_error, sizeof(shader_error)) == 1);
+            uint64_t blue_copy[] = {2, blue_texture, blue_pixels, 0,0,0,0,8,8,0,0,0,0,32,256,0};
+            assert(metallum_copy_pass(context, draw_command, pixel_fence, blue_copy, 16, shader_error, sizeof(shader_error)) == 1);
+            metallum_resource_destroy(context, blue_texture);
             // Command ownership must outlive removal of application resource IDs.
             metallum_resource_destroy(context, green_texture);
             metallum_resource_destroy(context, pixel_fence);
@@ -149,14 +187,50 @@ int main(void) {
             assert(draw_submission && metallum_submission_wait(context, draw_submission, 5000, shader_error, sizeof(shader_error)) == 1);
             const uint8_t *red_result = metallum_buffer_contents(context, red_pixels);
             const uint8_t *green_result = metallum_buffer_contents(context, green_pixels);
+            const uint8_t *blue_result = metallum_buffer_contents(context, blue_pixels);
             for (int pixel = 0; pixel < 64; ++pixel) {
+                assert(blue_result[pixel*4] == 0 && blue_result[pixel*4+2] == 255 && blue_result[pixel*4+3] == 255);
                 assert(red_result[pixel*4] == 255 && red_result[pixel*4+1] == 0 && red_result[pixel*4+3] == 255);
                 assert(green_result[pixel*4] == 0 && green_result[pixel*4+1] == 255 && green_result[pixel*4+3] == 255);
             }
+            metallum_buffer_destroy(context, blue_pixels);
             metallum_buffer_destroy(context, red_pixels); metallum_buffer_destroy(context, green_pixels);
             metallum_resource_destroy(context, draw_submission);
             metallum_resource_destroy(context, draw_command);
             metallum_resource_destroy(context, draw_texture);
+            // Real MetalFX output, repeated cache reuse, resize and Off while work is in flight.
+            if (metallum_device_info(context, 3)) {
+                for (int cycle = 0; cycle < 4; ++cycle) {
+                    uint32_t size = cycle < 2 ? 64 : 80, out_size = size * 2;
+                    uint64_t source = metallum_texture_create(context, MTLPixelFormatRGBA8Unorm, size, size, 1, 1, 0, 1, NULL);
+                    uint64_t target = metallum_texture_create(context, MTLPixelFormatRGBA8Unorm, out_size, out_size, 1, 1, 0, 1, NULL);
+                    uint64_t fx_command = metallum_command_buffer_create(context, "MetalFX direct texture smoke");
+                    uint64_t fx_fence = metallum_fence_create(context);
+                    double fx_clear[] = {0, 1, 0, 1, 1};
+                    uint64_t fx_pass = metallum_render_pass_create(context, fx_command, source, 0, 2, 0, fx_clear);
+                    int64_t fence_words[8] = {3};
+                    assert(metallum_render_command(context, fx_pass, 21, fx_fence, 0, fence_words) == 1);
+                    metallum_resource_destroy(context, fx_pass);
+                    assert(metallum_upscale(context, fx_command, source, target, fx_fence, shader_error, sizeof(shader_error)) == 1);
+                    uint64_t fx_stats[16]; metallum_diagnostics_snapshot(context, fx_stats);
+                    if (i == 0) printf("MetalFX cycle %d cached intermediate bytes: %llu\n", cycle, (unsigned long long)fx_stats[15]);
+                    uint64_t pixels = metallum_buffer_create(context, out_size * out_size * 4, 1);
+                    uint64_t read[] = {2, target, pixels, 0,0,0,0,out_size,out_size,0,0,0,0,out_size*4,out_size*out_size*4,0};
+                    assert(metallum_copy_pass(context, fx_command, fx_fence, read, 16, shader_error, sizeof(shader_error)) == 1);
+                    metallum_resource_destroy(context, source); metallum_resource_destroy(context, target);
+                    metallum_resource_destroy(context, fx_fence);
+                    if (cycle == 3) metallum_upscale_clear(context);
+                    uint64_t fx_submission = metallum_submit(context, fx_command);
+                    assert(fx_submission && metallum_submission_wait(context, fx_submission, 5000, shader_error, sizeof(shader_error)) == 1);
+                    const uint8_t *result = metallum_buffer_contents(context, pixels);
+                    for (uint32_t pixel = 0; pixel < out_size * out_size; ++pixel)
+                        assert(result[pixel*4] <= 2 && result[pixel*4+1] >= 253 && result[pixel*4+2] <= 2);
+                    metallum_buffer_destroy(context, pixels);
+                    metallum_resource_destroy(context, fx_submission); metallum_resource_destroy(context, fx_command);
+                }
+                uint64_t fx_stats[16]; metallum_diagnostics_snapshot(context, fx_stats);
+                assert(fx_stats[15] == 0);
+            }
             uint64_t layer = metallum_layer_create(context, 2);
             assert(layer && metallum_layer_configure(context, layer, 1708, 960, 0) == 1);
             assert(metallum_layer_configure(context, layer, 0, 960, 0) == 0);

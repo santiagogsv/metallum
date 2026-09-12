@@ -105,29 +105,29 @@ public final class MTLBuiltinPipelines {
         device = mtlDevice;
         presentPipeline = buildPipeline(PRESENT_MSL, "metallum_present_vs", "metallum_present_fs",
                 MTLPixelFormat.BGRA8Unorm.value, MTLPixelFormat.Invalid.value, MTLColorWriteMask.All.value);
-        presentLinearSampler = buildPresentSampler(MTLSamplerMinMagFilter.Linear);
-        presentNearestSampler = buildPresentSampler(MTLSamplerMinMagFilter.Nearest);
+        presentLinearSampler = device.nativeOwner().createPresentSampler(true);
+        presentNearestSampler = device.nativeOwner().createPresentSampler(false);
         ensureClearPipeline(MTLPixelFormat.BGRA8Unorm.value, MTLPixelFormat.Depth32Float.value, true);
         ensureClearPipeline(MTLPixelFormat.RGBA8Unorm.value, MTLPixelFormat.Depth32Float.value, true);
         ensureClearPipeline(MTLPixelFormat.BGRA8Unorm.value, MTLPixelFormat.Invalid.value, true);
     }
 
     public static void close() {
-        if (!(presentPipeline == null)) {
-            releaseResource(presentPipeline);
+        if (presentPipeline != null) {
+            presentPipeline.close();
             presentPipeline = null;
         }
-        if (!(presentLinearSampler == null)) {
-            releaseResource(presentLinearSampler);
+        if (presentLinearSampler != null) {
+            presentLinearSampler.close();
             presentLinearSampler = null;
         }
-        if (!(presentNearestSampler == null)) {
-            releaseResource(presentNearestSampler);
+        if (presentNearestSampler != null) {
+            presentNearestSampler.close();
             presentNearestSampler = null;
         }
-        clearPipelines.values().forEach(MTLBuiltinPipelines::releaseResource);
+        clearPipelines.values().forEach(NativeMetalDevice.Resource::close);
         clearPipelines.clear();
-        depthStencilStates.values().forEach(MTLBuiltinPipelines::releaseResource);
+        depthStencilStates.values().forEach(NativeMetalDevice.Resource::close);
         depthStencilStates.clear();
         device = null;
     }
@@ -284,9 +284,7 @@ public final class MTLBuiltinPipelines {
         }
         NativeMetalDevice.Resource pipeline = buildPipeline(CLEAR_MSL, "metallum_clear_vs", "metallum_clear_fs",
                 colorFormat, depthFormat, writeColor ? MTLColorWriteMask.All.value : MTLColorWriteMask.None.value);
-        if (!(pipeline == null)) {
-            clearPipelines.put(key, pipeline);
-        }
+        clearPipelines.put(key, pipeline);
         return pipeline;
     }
 
@@ -296,7 +294,7 @@ public final class MTLBuiltinPipelines {
         if (cached != null) {
             return cached;
         }
-        NativeMetalDevice.Resource state = own(device.nativeOwner().createDepthState(compareOp.value, writeDepth));
+        NativeMetalDevice.Resource state = device.nativeOwner().createDepthState(compareOp.value, writeDepth);
         depthStencilStates.put(key, state);
         return state;
     }
@@ -311,16 +309,9 @@ public final class MTLBuiltinPipelines {
     ) {
         try (MTLFunction vertex = device.newFunction(mslSource, vertexEntry);
              MTLFunction fragment = device.newFunction(mslSource, fragmentEntry)) {
-            return own(device.nativeOwner().createPipeline(vertex.nativeResource(), fragment.nativeResource(),
-                    new NativePipelineDescriptor(colorFormat, depthFormat, MTLPixelFormat.Invalid.value, writeMask)));
+            return device.nativeOwner().createPipeline(vertex.nativeResource(), fragment.nativeResource(),
+                    new NativePipelineDescriptor(colorFormat, depthFormat, MTLPixelFormat.Invalid.value, writeMask));
         }
-    }
-
-    private static NativeMetalDevice.Resource own(NativeMetalDevice.Resource resource) { return resource; }
-    private static void releaseResource(NativeMetalDevice.Resource resource) { resource.close(); }
-
-    private static NativeMetalDevice.Resource buildPresentSampler(final MTLSamplerMinMagFilter filter) {
-        return own(device.nativeOwner().createPresentSampler(filter == MTLSamplerMinMagFilter.Linear));
     }
 
 }

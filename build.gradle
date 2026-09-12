@@ -92,7 +92,7 @@ tasks.register('checkNative', Exec) {
     description = 'Verify Swift Metal descriptor policy and Java/C ownership without a GPU'
     dependsOn 'buildNative', 'jar'
     environment 'METALLUM_TEST_JAR', tasks.named('jar').get().archiveFile.get().asFile.absolutePath
-    environment 'METALLUM_TEST_CLASSPATH', (sourceSets.main.output + sourceSets.main.compileClasspath).asPath
+    environment 'METALLUM_TEST_CLASSPATH', sourceSets.main.runtimeClasspath.asPath
     environment 'JAVA_HOME', System.getProperty('java.home')
     commandLine 'sh', 'native/tests/check.sh'
 }

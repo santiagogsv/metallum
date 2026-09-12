@@ -21,9 +21,11 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
-    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, diagnosticsSnapshot, upscale, upscaleClear, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, layerCreate, layerConfigure, present, renderBytes, textureInfo, commandDebug, deviceInfo, deviceName;
+    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, diagnosticsSnapshot, upscale, upscaleClear, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, renderIndexedBatch, layerCreate, layerConfigure, present, renderBytes, textureInfo, commandDebug, deviceInfo, deviceName;
     // Reused only on the confined render thread; calls consume the words synchronously.
     private final MemorySegment drawWords = arena.allocate(64, 8);
+    public static final int INDEXED_BATCH_CAPACITY = 256;
+    private final MemorySegment indexedBatch = arena.allocate(INDEXED_BATCH_CAPACITY * 16L, 8);
     private final MethodHandle deviceBorrow;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
@@ -34,7 +36,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 16) throw new IllegalStateException("Expected Metallum native ABI 16, found " + abiVersion);
+            if (abiVersion != 17) throw new IllegalStateException("Expected Metallum native ABI 17, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             deviceBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -74,6 +76,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             renderBytes = linker.downcallHandle(symbols.findOrThrow("metallum_render_bytes"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG));
             textureInfo = linker.downcallHandle(symbols.findOrThrow("metallum_texture_info"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_INT));
             commandDebug = linker.downcallHandle(symbols.findOrThrow("metallum_command_debug"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, ADDRESS));
+            renderIndexedBatch = linker.downcallHandle(symbols.findOrThrow("metallum_render_indexed_batch"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, ADDRESS, JAVA_INT));
             renderCommand = linker.downcallHandle(symbols.findOrThrow("metallum_render_command"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_INT, JAVA_LONG, JAVA_LONG, ADDRESS));
             renderPassCreate = linker.downcallHandle(symbols.findOrThrow("metallum_render_pass_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_INT, JAVA_INT, ADDRESS));
             copyPass = linker.downcallHandle(symbols.findOrThrow("metallum_copy_pass"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT, ADDRESS, JAVA_INT));
@@ -264,6 +267,25 @@ public final class NativeMetalDevice implements AutoCloseable {
             if ((int) renderCommand.invokeExact(context, id, op, p0, p1, drawWords) != 1)
                 throw new IllegalArgumentException("Rejected Metal render operation " + op);
         } catch (Throwable failure) { throw new IllegalStateException("Cannot encode Metal render operation " + op, failure); }
+    }
+
+    /** Synchronous render-thread scratch; never retained by native encoding. */
+    public MemorySegment indexedDrawScratch() { checkOpen(); return indexedBatch; }
+
+    public void renderIndexedBatch(Resource pass, Buffer indices, long primitive, long indexType,
+                                   int instances, int baseInstance, int count) {
+        long passID = pass.id(this), bufferID = indices.id(this);
+        if (count < 0 || count > INDEXED_BATCH_CAPACITY || instances < 0 || baseInstance < 0)
+            throw new IllegalArgumentException("Invalid indexed batch");
+        if (count == 0) return;
+        drawWords.setAtIndex(JAVA_LONG, 0, primitive);
+        drawWords.setAtIndex(JAVA_LONG, 1, indexType);
+        drawWords.setAtIndex(JAVA_LONG, 2, instances);
+        drawWords.setAtIndex(JAVA_LONG, 3, baseInstance);
+        try {
+            if ((int) renderIndexedBatch.invokeExact(context, passID, bufferID, drawWords, indexedBatch, count) != 1)
+                throw new IllegalArgumentException("Rejected indexed batch");
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot encode indexed batch", failure); }
     }
 
     public Resource createRenderPass(Resource command, Resource color, Resource depth,

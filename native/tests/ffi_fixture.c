@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; uint64_t length; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 16
+#define TEST_ABI_VERSION 17
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -190,6 +190,23 @@ int32_t metallum_render_command(void *context, uint64_t pass, uint32_t op, uint6
     if (!c || pass >= 256 || !c->resources[pass] || c->resources[pass]->kind != 9 || !words || op > 22) return 0;
     last_render[0] = op; last_render[1] = (intptr_t)p0; last_render[2] = (intptr_t)p1;
     memcpy(last_render + 3, words, 8 * sizeof(int64_t));
+    return 1;
+}
+static int64_t batch_stats[10];
+void metallum_test_batch_stats(int64_t *out) { memcpy(out, batch_stats, sizeof(batch_stats)); }
+void metallum_test_reset_batch(void) { memset(batch_stats, 0, sizeof(batch_stats)); }
+int32_t metallum_render_indexed_batch(void *context, uint64_t pass, uint64_t indices,
+                                    const int64_t *words, const void *records, uint32_t count) {
+    Context *c = context;
+    if (!c || pass >= 256 || !c->resources[pass] || c->resources[pass]->kind != 9 || !records || !words || count > 256) return 0;
+    batch_stats[0]++; batch_stats[1] += count;
+    for (uint32_t i = 0; i < count; i++) {
+        const char *r = (const char *)records + i * 16;
+        int64_t offset; int32_t n, vertex;
+        memcpy(&offset, r, 8); memcpy(&n, r + 8, 4); memcpy(&vertex, r + 12, 4);
+        batch_stats[2] += offset; batch_stats[3] += n; batch_stats[4] += vertex;
+    }
+    memcpy(batch_stats + 5, words, 4 * sizeof(int64_t)); batch_stats[9] = indices;
     return 1;
 }
 uint64_t metallum_layer_create(void *context, double scale) {

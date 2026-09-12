@@ -73,15 +73,21 @@ public func metallumRenderCommand(_ handle: UnsafeMutableRawPointer?, _ passID: 
             e.drawIndexedPrimitives(primitiveType: primitive, indexCount: n(1), indexType: indexType, indexBuffer: buffer.gpuAddress + UInt64(n(3)),
                                     indexBufferLength: buffer.length - n(3), instanceCount: n(4), baseVertex: n(5), baseInstance: n(6))
         case 19:
-            guard positive(0, 1, 2), let primitive = MTLPrimitiveType(rawValue: UInt(w[0])),
+            guard positive(0, 1, 2, 3), let primitive = MTLPrimitiveType(rawValue: UInt(w[0])),
                   let indexType = MTLIndexType(rawValue: UInt(w[1])), let buffer = lookupBuffer(p0),
-                  let indirect = lookupBuffer(p1), n(2) <= indirect.length, indirect.length - n(2) >= 20 else { return 0 }
-            e.drawIndexedPrimitives(primitiveType: primitive, indexType: indexType, indexBuffer: buffer.gpuAddress, indexBufferLength: buffer.length,
-                                    indirectBuffer: indirect.gpuAddress + UInt64(n(2)))
+                  let indirect = lookupBuffer(p1),
+                  DrawBatchPolicy.indirectRange(offset: w[2], count: w[3], stride: 20, length: indirect.length) else { return 0 }
+            for i in 0..<n(3) {
+                e.drawIndexedPrimitives(primitiveType: primitive, indexType: indexType, indexBuffer: buffer.gpuAddress, indexBufferLength: buffer.length,
+                                        indirectBuffer: indirect.gpuAddress + UInt64(n(2) + i * 20))
+            }
         case 20:
-            guard positive(0, 1), let primitive = MTLPrimitiveType(rawValue: UInt(w[0])),
-                  let indirect = lookupBuffer(p0), n(1) <= indirect.length, indirect.length - n(1) >= 16 else { return 0 }
-            e.drawPrimitives(primitiveType: primitive, indirectBuffer: indirect.gpuAddress + UInt64(n(1)))
+            guard positive(0, 1, 2), let primitive = MTLPrimitiveType(rawValue: UInt(w[0])),
+                  let indirect = lookupBuffer(p0),
+                  DrawBatchPolicy.indirectRange(offset: w[1], count: w[2], stride: 16, length: indirect.length) else { return 0 }
+            for i in 0..<n(2) {
+                e.drawPrimitives(primitiveType: primitive, indirectBuffer: indirect.gpuAddress + UInt64(n(1) + i * 16))
+            }
         case 21, 22:
             guard positive(0), let fence = resource(p0, as: (any MTLFence).self) else { return 0 }
             guard w[0] > 0, w[0] <= 3 else { return 0 }
@@ -108,6 +114,53 @@ public func metallumRenderBytes(_ handle: UnsafeMutableRawPointer?, _ id: UInt64
         guard let address = pass.command.inlineBytes(bytes, length: Int(length)) else { return 0 }
         pass.vertexBuffers[Int(index)] = nil
         pass.command.vertex.setAddress(address, index: Int(index))
+        return 1
+    }
+}
+
+// Validation uses division to avoid overflow on untrusted counts/offsets.
+enum DrawBatchPolicy {
+    static func indirectRange(offset: Int64, count: Int64, stride: Int, length: Int) -> Bool {
+        offset >= 0 && offset <= length && offset % 4 == 0 && count >= 0 &&
+            count <= (length - Int(offset)) / stride
+    }
+    static func indexRange(offset: Int64, count: Int32, indexBytes: Int, length: Int) -> Bool {
+        offset >= 0 && offset <= length && offset % Int64(indexBytes) == 0 && count >= 0 &&
+            Int(count) <= (length - Int(offset)) / indexBytes
+    }
+}
+
+@c(metallum_render_indexed_batch)
+public func metallumRenderIndexedBatch(_ handle: UnsafeMutableRawPointer?, _ passID: UInt64,
+                                      _ indexID: UInt64, _ words: UnsafePointer<Int64>?,
+                                      _ records: UnsafeRawPointer?, _ count: UInt32) -> Int32 {
+    autoreleasepool {
+        guard let handle, let w = words, let records, count <= 256,
+              w[0] >= 0, w[1] >= 0, w[2] >= 0, w[3] >= 0,
+              let primitive = MTLPrimitiveType(rawValue: UInt(w[0])),
+              let indexType = MTLIndexType(rawValue: UInt(w[1])) else { return 0 }
+        let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+        guard let pass = context.resources[passID] as? NativeRenderPass,
+              let indices = context.buffers[indexID] else { return 0 }
+        let indexBytes = indexType == .uint16 ? 2 : 4
+        // Validate the whole chunk before emitting any of its draws.
+        for i in 0..<Int(count) {
+            let start = i * 16
+            guard DrawBatchPolicy.indexRange(offset: records.load(fromByteOffset: start, as: Int64.self),
+                count: records.load(fromByteOffset: start + 8, as: Int32.self),
+                indexBytes: indexBytes, length: indices.length) else { return 0 }
+        }
+        for i in 0..<Int(count) {
+            let start = i * 16
+            let offset = Int(records.load(fromByteOffset: start, as: Int64.self))
+            let indexCount = Int(records.load(fromByteOffset: start + 8, as: Int32.self))
+            if indexCount == 0 { continue }
+            pass.encoder.drawIndexedPrimitives(primitiveType: primitive, indexCount: indexCount, indexType: indexType,
+                indexBuffer: indices.gpuAddress + UInt64(offset), indexBufferLength: indices.length - offset,
+                instanceCount: Int(w[2]), baseVertex: Int(records.load(fromByteOffset: start + 12, as: Int32.self)),
+                baseInstance: Int(w[3]))
+        }
+        pass.command.hold(indices as AnyObject)
         return 1
     }
 }

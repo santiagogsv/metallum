@@ -51,10 +51,43 @@ public class RenderAdapterSmoke {
                 check(() -> encoder.setVertexBytes(output, 16, 2), 16, output.address(), 0, 16, 2);
                 check(() -> encoder.drawPrimitives(MTLPrimitiveType.Triangle, 3, 6, 2, 7), 17, 0, 0, 3, 3, 6, 2, 7);
                 check(() -> encoder.drawIndexedPrimitives(MTLPrimitiveType.Triangle, 6, MTLIndexType.UInt32, buffer, 8, 2, -3, 4), 18, buffer.nativeOwner().id(device), 0, 3, 6, 1, 8, 2, -3, 4);
-                check(() -> encoder.drawIndexedPrimitivesIndirect(MTLPrimitiveType.Triangle, MTLIndexType.UInt16, buffer, indirect, 20), 19, buffer.nativeOwner().id(device), indirect.nativeOwner().id(device), 3, 0, 20);
-                check(() -> encoder.drawPrimitivesIndirect(MTLPrimitiveType.Triangle, indirect, 16), 20, indirect.nativeOwner().id(device), 0, 3, 16);
+                check(() -> encoder.drawIndexedPrimitivesIndirect(MTLPrimitiveType.Triangle, MTLIndexType.UInt16, buffer, indirect, 20, 3), 19, buffer.nativeOwner().id(device), indirect.nativeOwner().id(device), 3, 0, 20, 3);
+                check(() -> encoder.drawPrimitivesIndirect(MTLPrimitiveType.Triangle, indirect, 16, 4), 20, indirect.nativeOwner().id(device), 0, 3, 16, 4);
                 check(() -> encoder.updateFence(fence, MTLRenderStages.Fragment), 21, fence.owner().id(device), 0, 2);
                 check(() -> encoder.waitForFence(fence, MTLRenderStages.VertexAndFragment), 22, fence.owner().id(device), 0, 3);
+                var symbols = SymbolLookup.libraryLookup(fixture, arena);
+                var batchStats = Linker.nativeLinker().downcallHandle(symbols.findOrThrow("metallum_test_batch_stats"), FunctionDescriptor.ofVoid(ADDRESS));
+                var resetBatch = Linker.nativeLinker().downcallHandle(symbols.findOrThrow("metallum_test_reset_batch"), FunctionDescriptor.ofVoid());
+                var parameters = java.nio.IntBuffer.allocate(258 * 3);
+                for (int i = 0; i < 258; i++) { parameters.put(i * 3, 2); parameters.put(i * 3 + 1, 3); parameters.put(i * 3 + 2, -7); }
+                parameters.put(1, 0); // One skipped draw, 257 active draws span two chunks.
+                parameters.position(9); // Packed overload intentionally uses absolute element zero.
+                resetBatch.invokeExact();
+                encoder.multiDrawIndexed(MTLPrimitiveType.Triangle, MTLIndexType.UInt32, buffer, parameters, 2, 5, 258);
+                batchStats.invokeExact(output);
+                long[] expectedBatch = {2, 257, 257 * 8, 257 * 3, -257 * 7, 3, 1, 2, 5, buffer.nativeOwner().id(device)};
+                for (int i = 0; i < expectedBatch.length; i++) if (output.getAtIndex(JAVA_LONG, i) != expectedBatch[i])
+                    throw new AssertionError("Packed batch argument " + i);
+                if (parameters.position() != 9) throw new AssertionError("Packed input position changed");
+                try { encoder.multiDrawIndexed(MTLPrimitiveType.Triangle, MTLIndexType.UInt32, buffer, parameters, 1, 0, 259); throw new AssertionError("Short packed input accepted"); }
+                catch (IllegalArgumentException expected) { }
+                var offsets = org.lwjgl.PointerBuffer.create(arena.allocate(24, 8).address(), 3);
+                offsets.put(0, 900); offsets.put(1, 4); offsets.put(2, 8); offsets.position(1);
+                var counts = java.nio.IntBuffer.wrap(new int[]{900, 6, -1}); counts.position(1);
+                var vertices = java.nio.IntBuffer.wrap(new int[]{900, -3, 8}); vertices.position(1);
+                resetBatch.invokeExact();
+                encoder.multiDrawIndexed(MTLPrimitiveType.Triangle, MTLIndexType.UInt16, buffer, offsets, counts, vertices, 2);
+                batchStats.invokeExact(output);
+                long[] expectedArrays = {1, 1, 4, 6, -3, 3, 0, 1, 0, buffer.nativeOwner().id(device)};
+                for (int i = 0; i < expectedArrays.length; i++) if (output.getAtIndex(JAVA_LONG, i) != expectedArrays[i])
+                    throw new AssertionError("Array batch argument " + i);
+                if (offsets.position() != 1 || counts.position() != 1 || vertices.position() != 1) throw new AssertionError("Array positions changed");
+                resetBatch.invokeExact();
+                encoder.multiDrawIndexed(MTLPrimitiveType.Triangle, MTLIndexType.UInt16, buffer, offsets, counts, vertices, 0);
+                batchStats.invokeExact(output);
+                if (output.getAtIndex(JAVA_LONG, 0) != 0) throw new AssertionError("Empty batch crossed FFM");
+                try { encoder.multiDrawIndexed(MTLPrimitiveType.Triangle, MTLIndexType.UInt16, buffer, offsets, counts, vertices, 3); throw new AssertionError("Short arrays accepted"); }
+                catch (IllegalArgumentException expected) { }
                 encoder.endEncoding(); encoder.endEncoding();
                 try { encoder.setVertexTexture(ptr, 0); throw new AssertionError("Closed pass accepted"); }
                 catch (IllegalStateException expected) { }
@@ -65,6 +98,6 @@ public class RenderAdapterSmoke {
             }
             if (device.memoryStats().resources() != 0) throw new AssertionError("Adapter resources leaked");
         }
-        System.out.println("All 23 render adapter operations and presentation ownership passed (C fixture)");
+        System.out.println("Render adapters, native draw batching and presentation ownership passed (C fixture)");
     }
 }
