@@ -104,12 +104,11 @@ public final class MTLBuiltinPipelines {
     public static void init(final MTLDevice mtlDevice) {
         device = mtlDevice;
         presentPipeline = buildPipeline(PRESENT_MSL, "metallum_present_vs", "metallum_present_fs",
-                MTLPixelFormat.BGRA8Unorm.value, MTLPixelFormat.Invalid.value, MTLColorWriteMask.All.value);
+                MTLPixelFormat.BGRA8Unorm.value, MTLColorWriteMask.All.value);
         presentLinearSampler = device.nativeOwner().createPresentSampler(true);
         presentNearestSampler = device.nativeOwner().createPresentSampler(false);
-        ensureClearPipeline(MTLPixelFormat.BGRA8Unorm.value, MTLPixelFormat.Depth32Float.value, true);
-        ensureClearPipeline(MTLPixelFormat.RGBA8Unorm.value, MTLPixelFormat.Depth32Float.value, true);
-        ensureClearPipeline(MTLPixelFormat.BGRA8Unorm.value, MTLPixelFormat.Invalid.value, true);
+        ensureClearPipeline(MTLPixelFormat.BGRA8Unorm.value, true);
+        ensureClearPipeline(MTLPixelFormat.RGBA8Unorm.value, true);
     }
 
     public static void close() {
@@ -148,13 +147,12 @@ public final class MTLBuiltinPipelines {
             }
 
             long colorFormat = (colorTexture == null) ? MTLPixelFormat.Invalid.value : MTLTexture.pixelFormat(colorTexture);
-            long depthFormat = (depthTexture == null) ? MTLPixelFormat.Invalid.value : MTLTexture.pixelFormat(depthTexture);
-            NativeMetalDevice.Resource pipeline = ensureClearPipeline(colorFormat, depthFormat, clearColor != null);
+            NativeMetalDevice.Resource pipeline = ensureClearPipeline(colorFormat, clearColor != null);
             if ((pipeline == null)) {
                 return;
             }
 
-            NativeMetalDevice.Resource depthState = depthFormat != MTLPixelFormat.Invalid.value
+            NativeMetalDevice.Resource depthState = depthTexture != null
                     ? ensureDepthStencilState(MTLCompareFunction.Always, clearDepth != null)
                     : null;
 
@@ -210,7 +208,7 @@ public final class MTLBuiltinPipelines {
             }
 
             if (!fullRegion) {
-                NativeMetalDevice.Resource pipeline = ensureClearPipeline(MTLTexture.pixelFormat(colorTexture), MTLTexture.pixelFormat(depthTexture), true);
+                NativeMetalDevice.Resource pipeline = ensureClearPipeline(MTLTexture.pixelFormat(colorTexture), true);
                 NativeMetalDevice.Resource depthState = ensureDepthStencilState(MTLCompareFunction.Always, true);
                 if ((pipeline == null) || (depthState == null)) {
                     encoder.endEncoding();
@@ -258,9 +256,12 @@ public final class MTLBuiltinPipelines {
         encoder.setViewport(0.0, 0.0, viewportWidth, viewportHeight, 0.0, 1.0);
         encoder.setScissorRect(scissorX, scissorY, scissorWidth, scissorHeight);
         encoder.setRenderPipelineState(pipeline);
-        if (!(depthState == null)) {
-            encoder.setDepthStencilState(depthState);
-        }
+        // A clear may share an encoder with scene draws; inherited raster state
+        // must not cull it, turn it into lines, or bias its requested depth.
+        encoder.setCullMode(MTLCullMode.None);
+        encoder.setTriangleFillMode(MTLTriangleFillMode.Fill);
+        encoder.setDepthBias(0, 0, 0);
+        encoder.setDepthStencilState(depthState);
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
             MemorySegment uniforms = MemorySegment.ofAddress(stack.nmalloc(16, 48)).reinterpret(48);
@@ -276,14 +277,14 @@ public final class MTLBuiltinPipelines {
         encoder.drawPrimitives(MTLPrimitiveType.Triangle, 0, 3, 1, 0);
     }
 
-    private static NativeMetalDevice.Resource ensureClearPipeline(final long colorFormat, final long depthFormat, final boolean writeColor) {
-        long key = (colorFormat << 32) | (depthFormat << 1) | (writeColor ? 1L : 0L);
+    private static NativeMetalDevice.Resource ensureClearPipeline(final long colorFormat, final boolean writeColor) {
+        long key = (colorFormat << 1) | (writeColor ? 1L : 0L);
         NativeMetalDevice.Resource cached = clearPipelines.get(key);
         if (cached != null) {
             return cached;
         }
         NativeMetalDevice.Resource pipeline = buildPipeline(CLEAR_MSL, "metallum_clear_vs", "metallum_clear_fs",
-                colorFormat, depthFormat, writeColor ? MTLColorWriteMask.All.value : MTLColorWriteMask.None.value);
+                colorFormat, writeColor ? MTLColorWriteMask.All.value : MTLColorWriteMask.None.value);
         clearPipelines.put(key, pipeline);
         return pipeline;
     }
@@ -304,13 +305,12 @@ public final class MTLBuiltinPipelines {
             final String vertexEntry,
             final String fragmentEntry,
             final long colorFormat,
-            final long depthFormat,
             final long writeMask
     ) {
         try (MTLFunction vertex = device.newFunction(mslSource, vertexEntry);
              MTLFunction fragment = device.newFunction(mslSource, fragmentEntry)) {
             return device.nativeOwner().createPipeline(vertex.nativeResource(), fragment.nativeResource(),
-                    new NativePipelineDescriptor(colorFormat, depthFormat, MTLPixelFormat.Invalid.value, writeMask));
+                    new NativePipelineDescriptor(colorFormat, writeMask));
         }
     }
 

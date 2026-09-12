@@ -45,8 +45,8 @@ void metallum_resource_destroy(void *context, uint64_t resource);
 uint64_t metallum_function_create(void *context, const char *source, const char *entry,
                                   char *error_output, uint32_t error_capacity);
 void metallum_shader_libraries_clear(void *context);
-/* Pipeline ABI 5: all words are uint64_t in native byte order. Header fields:
- * colorFormat, depthFormat, stencilFormat, writeMask, blendingEnabled,
+/* Pipeline ABI 19: all words are uint64_t in native byte order. Header fields:
+ * colorFormat, writeMask, blendingEnabled,
  * sourceRGB, destRGB, rgbOp, sourceAlpha, destAlpha, alphaOp, attributeCount, layoutCount.
  * Attribute entries: index, format, offset, bufferIndex. Layouts: bufferIndex, stride,
  * stepFunction, stepRate. All enum fields are Metal raw values; counts <= 31, indices < 31.

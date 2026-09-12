@@ -7,25 +7,23 @@ enum PipelineDescriptionError: LocalizedError {
 }
 
 enum PipelineDescriptors {
-    // ABI: 13 header words, followed by attributes and layouts (4 words per entry).
+    // ABI: 11 header words, followed by attributes and layouts (4 words per entry).
     static func make(_ words: [UInt64]) throws -> MTL4RenderPipelineDescriptor {
-        guard words.count >= 13, words[11] <= 31, words[12] <= 31,
-              words.count == 13 + 4 * Int(words[11] + words[12]), words[3] <= 15, words[4] <= 1,
-              let color = MTLPixelFormat(rawValue: UInt(words[0])),
-              MTLPixelFormat(rawValue: UInt(words[1])) != nil,
-              MTLPixelFormat(rawValue: UInt(words[2])) != nil else {
+        guard words.count >= 11, words[9] <= 31, words[10] <= 31,
+              words.count == 11 + 4 * Int(words[9] + words[10]), words[1] <= 15, words[2] <= 1,
+              let color = MTLPixelFormat(rawValue: UInt(words[0])) else {
             throw PipelineDescriptionError.invalid("Invalid pipeline header or entry counts")
         }
         let descriptor = MTL4RenderPipelineDescriptor()
         let attachment = descriptor.colorAttachments[0]!
         attachment.pixelFormat = color
-        attachment.writeMask = MTLColorWriteMask(rawValue: UInt(words[3]))
-        attachment.blendingState = words[4] == 1 ? .enabled : .disabled
+        attachment.writeMask = MTLColorWriteMask(rawValue: UInt(words[1]))
+        attachment.blendingState = words[2] == 1 ? .enabled : .disabled
         // Metal 4 derives depth/stencil formats from the render pass attachments.
-        if words[4] == 1 {
-            guard let srcRGB = MTLBlendFactor(rawValue: UInt(words[5])), let dstRGB = MTLBlendFactor(rawValue: UInt(words[6])),
-                  let opRGB = MTLBlendOperation(rawValue: UInt(words[7])), let srcAlpha = MTLBlendFactor(rawValue: UInt(words[8])),
-                  let dstAlpha = MTLBlendFactor(rawValue: UInt(words[9])), let opAlpha = MTLBlendOperation(rawValue: UInt(words[10])) else {
+        if words[2] == 1 {
+            guard let srcRGB = MTLBlendFactor(rawValue: UInt(words[3])), let dstRGB = MTLBlendFactor(rawValue: UInt(words[4])),
+                  let opRGB = MTLBlendOperation(rawValue: UInt(words[5])), let srcAlpha = MTLBlendFactor(rawValue: UInt(words[6])),
+                  let dstAlpha = MTLBlendFactor(rawValue: UInt(words[7])), let opAlpha = MTLBlendOperation(rawValue: UInt(words[8])) else {
                 throw PipelineDescriptionError.invalid("Invalid pipeline blend state")
             }
             attachment.sourceRGBBlendFactor = srcRGB
@@ -35,12 +33,12 @@ enum PipelineDescriptors {
             attachment.destinationAlphaBlendFactor = dstAlpha
             attachment.alphaBlendOperation = opAlpha
         }
-        if words[11] != 0 || words[12] != 0 {
+        if words[9] != 0 || words[10] != 0 {
             let vertex = MTLVertexDescriptor()
             var indices = Set<UInt64>()
             var usedBuffers = Set<UInt64>()
-            for i in 0..<Int(words[11]) {
-                let offset = 13 + i * 4
+            for i in 0..<Int(words[9]) {
+                let offset = 11 + i * 4
                 let index = words[offset], buffer = words[offset + 3]
                 guard index < 31, buffer < 31, words[offset + 2] <= UInt64(Int.max),
                       indices.insert(index).inserted, let format = MTLVertexFormat(rawValue: UInt(words[offset + 1])), format != .invalid else {
@@ -52,8 +50,8 @@ enum PipelineDescriptors {
                 vertex.attributes[Int(index)].bufferIndex = Int(buffer)
             }
             var layouts = Set<UInt64>()
-            for i in 0..<Int(words[12]) {
-                let offset = 13 + Int(words[11]) * 4 + i * 4
+            for i in 0..<Int(words[10]) {
+                let offset = 11 + Int(words[9]) * 4 + i * 4
                 let buffer = words[offset]
                 guard buffer < 31, layouts.insert(buffer).inserted, words[offset + 1] <= UInt64(Int.max),
                       words[offset + 3] > 0, words[offset + 3] <= UInt64(Int.max),
@@ -76,7 +74,7 @@ public func metallumPipelineCreate(_ handle: UnsafeMutableRawPointer?, _ vertexI
                                   _ words: UnsafePointer<UInt64>?, _ count: UInt32,
                                   _ errorOutput: UnsafeMutablePointer<CChar>?, _ errorCapacity: UInt32) -> UInt64 {
     ShaderCompilation.writeError("", to: errorOutput, capacity: errorCapacity)
-    guard let handle, let words, count >= 13, count <= 261 else {
+    guard let handle, let words, count >= 11, count <= 259 else {
         ShaderCompilation.writeError("Invalid pipeline context or description", to: errorOutput, capacity: errorCapacity)
         return 0
     }

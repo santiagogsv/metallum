@@ -68,14 +68,6 @@ public enum MTLPixelFormat {
         this.value = value;
     }
 
-    public boolean hasStencil() {
-        return hasStencil(this.value);
-    }
-
-    public static boolean hasStencil(final long pixelFormat) {
-        return pixelFormat == Depth24Unorm_Stencil8.value || pixelFormat == Depth32Float_Stencil8.value;
-    }
-
     public static MTLPixelFormat from(final com.mojang.blaze3d.GpuFormat format) {
         return switch (format) {
             case R8_UNORM -> R8Unorm;

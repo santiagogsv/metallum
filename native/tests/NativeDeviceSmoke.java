@@ -45,7 +45,7 @@ public final class NativeDeviceSmoke {
                 String renderShader = "#include <metal_stdlib>\nusing namespace metal; vertex float4 vs(uint id [[vertex_id]]) { return float4(0,0,0,1); } fragment float4 fs() { return float4(1); }";
                 var vertex = device.compileFunction(renderShader, "vs");
                 var fragment = device.compileFunction(renderShader, "fs");
-                var description = new NativePipelineDescriptor(70, 0, 0, 15);
+                var description = new NativePipelineDescriptor(70, 15);
                 try (var other = new NativeMetalDevice(library); var foreign = other.compileFunction(renderShader, "vs")) {
                     try { device.createPipeline(foreign, fragment, description); throw new AssertionError("Cross-device function accepted"); }
                     catch (IllegalArgumentException expected) { }
@@ -192,7 +192,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 18")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 19")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

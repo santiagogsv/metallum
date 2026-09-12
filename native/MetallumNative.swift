@@ -48,7 +48,7 @@ final class DeviceContext {
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 18 }
+public func metallumABIVersion() -> UInt32 { 19 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {

@@ -9,7 +9,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 18);
+        assert(metallum_abi_version() == 19);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -93,10 +93,10 @@ int main(void) {
             const char *render_msl = "#include <metal_stdlib>\nusing namespace metal; struct V { float4 position [[position]]; float4 color; }; vertex V vs(uint id [[vertex_id]], constant float4& color [[buffer(0)]]) { float2 p[3] = {float2(-1,-1),float2(3,-1),float2(-1,3)}; return V{float4(p[id],0,1),color}; } fragment float4 fs(V v [[stage_in]]) { return v.color; }";
             uint64_t vs = metallum_function_create(context, render_msl, "vs", shader_error, sizeof(shader_error));
             uint64_t fs = metallum_function_create(context, render_msl, "fs", shader_error, sizeof(shader_error));
-            uint64_t description[] = {70, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-            uint64_t pipeline = metallum_pipeline_create(context, vs, fs, description, 13, shader_error, sizeof(shader_error));
+            uint64_t description[] = {70, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+            uint64_t pipeline = metallum_pipeline_create(context, vs, fs, description, 11, shader_error, sizeof(shader_error));
             assert(pipeline && shader_error[0] == 0);
-            assert(metallum_pipeline_create(context, fs, vs, description, 13, shader_error, sizeof(shader_error)) == 0);
+            assert(metallum_pipeline_create(context, fs, vs, description, 11, shader_error, sizeof(shader_error)) == 0);
             assert(shader_error[0] != 0);
             metallum_resource_destroy(context, vs); metallum_resource_destroy(context, fs);
             metallum_shader_libraries_clear(context);

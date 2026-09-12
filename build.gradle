@@ -104,3 +104,14 @@ tasks.named('processResources') {
         into 'native/macos-arm64'
     }
 }
+
+// Run from a GPU-accessible session; includes the CPU/FFM/packaging checks first.
+tasks.register('checkGpu', Exec) {
+    group = 'verification'
+    description = 'Run Metal GPU readback and production Java clear-renderer regressions'
+    dependsOn 'checkNative'
+    environment 'METALLUM_TEST_CLASSPATH', sourceSets.main.runtimeClasspath.asPath
+    environment 'JAVA_HOME', System.getProperty('java.home')
+    environment 'MTL_DEBUG_LAYER', '1'
+    commandLine 'sh', 'native/tests/smoke.sh'
+}

@@ -12,3 +12,10 @@ build/native/device_smoke
     src/main/java/com/metallum/nativebridge/NativeMetalDevice.java src/main/java/com/metallum/nativebridge/NativePipelineDescriptor.java native/tests/NativeDeviceSmoke.java
 "$java_bin" --enable-native-access=ALL-UNNAMED -cp build/native/test-classes \
     NativeDeviceSmoke "$PWD/build/native/libmetallum_native.dylib"
+
+# Gradle checkGpu supplies the full Minecraft/LWJGL runtime for production Java renderer tests.
+if [ -n "${METALLUM_TEST_CLASSPATH:-}" ]; then
+    "$javac_bin" --release 25 -cp "$METALLUM_TEST_CLASSPATH" -d build/native/test-classes native/tests/BuiltinPipelineGpuSmoke.java
+    "$java_bin" --enable-native-access=ALL-UNNAMED -cp "build/native/test-classes:$METALLUM_TEST_CLASSPATH" \
+        com.metallum.mtl.BuiltinPipelineGpuSmoke "$PWD/build/native/libmetallum_native.dylib"
+fi

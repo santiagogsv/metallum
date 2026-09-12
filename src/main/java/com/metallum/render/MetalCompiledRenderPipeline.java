@@ -42,11 +42,9 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
     private final MTLPrimitiveType topology;
     private final int vertexBufferCount;
 
-    private NativeMetalDevice.Resource withDepthOwner, withoutDepthOwner;
     private boolean closed;
     private final NativeMetalDevice.Resource depthStencilState;
-    private final NativeMetalDevice.Resource withDepthPipeline;
-    private final NativeMetalDevice.Resource withoutDepthPipeline;
+    private final NativeMetalDevice.Resource pipeline;
 
     MetalCompiledRenderPipeline(
             final MetalDevice device,
@@ -100,23 +98,14 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
         MTLFunction vertexFunction = device.getOrCompileFunction(vertexMsl, vertexEntryPoint);
         MTLFunction fragmentFunction = device.getOrCompileFunction(fragmentMsl, fragmentEntryPoint);
 
-        this.withDepthOwner = device.nativeOwner().createPipeline(vertexFunction.nativeResource(), fragmentFunction.nativeResource(),
-                nativeDescriptor(info, this.firstAvailableVertexBufferSlot, colorFormat, MTLPixelFormat.Depth32Float));
-        try {
-            this.withoutDepthOwner = device.nativeOwner().createPipeline(vertexFunction.nativeResource(), fragmentFunction.nativeResource(),
-                    nativeDescriptor(info, this.firstAvailableVertexBufferSlot, colorFormat, MTLPixelFormat.Invalid));
-        } catch (Throwable failure) {
-            this.withDepthOwner.close();
-            throw failure;
-        }
-        this.withDepthPipeline = this.withDepthOwner;
-        this.withoutDepthPipeline = this.withoutDepthOwner;
+        this.pipeline = device.nativeOwner().createPipeline(vertexFunction.nativeResource(), fragmentFunction.nativeResource(),
+                nativeDescriptor(info, this.firstAvailableVertexBufferSlot, colorFormat));
     }
 
-    private static NativePipelineDescriptor nativeDescriptor(RenderPipeline info, int firstSlot, MTLPixelFormat color, MTLPixelFormat depth) {
+    private static NativePipelineDescriptor nativeDescriptor(RenderPipeline info, int firstSlot, MTLPixelFormat color) {
         var target = info.getColorTargetState();
         long mask = target == null ? MTLColorWriteMask.All.value : MTLColorWriteMask.from(target.writeMask());
-        var descriptor = new NativePipelineDescriptor(color.value, depth.value, MTLPixelFormat.Invalid.value, mask);
+        var descriptor = new NativePipelineDescriptor(color.value, mask);
         if (target != null && target.blendFunction().isPresent()) {
             var blend = target.blendFunction().get();
             descriptor.blend(MTLBlendFactor.from(blend.color().sourceFactor()).value, MTLBlendFactor.from(blend.color().destFactor()).value,
@@ -142,7 +131,7 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
 
     @Override
     public boolean isValid() {
-        return !(this.withDepthPipeline == null);
+        return !closed;
     }
 
     List<ResourceBinding> resources() {
@@ -174,8 +163,8 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
         return this.depthStencilState;
     }
 
-    NativeMetalDevice.Resource getNativePipeline(final boolean useDepth) {
-        return useDepth ? this.withDepthPipeline : this.withoutDepthPipeline;
+    NativeMetalDevice.Resource getNativePipeline() {
+        return this.pipeline;
     }
 
     MTLCullMode cullMode() {
@@ -207,8 +196,7 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
     @Override
     public void close() {
         if (closed) return;
-        withDepthOwner.close();
-        withoutDepthOwner.close();
+        pipeline.close();
         closed = true;
     }
 }

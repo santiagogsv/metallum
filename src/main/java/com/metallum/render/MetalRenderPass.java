@@ -112,11 +112,15 @@ final class MetalRenderPass implements RenderPassBackend {
     @Override
     public void bindTexture(final @NonNull String name, @Nullable final GpuTextureView textureView, @Nullable final GpuSampler sampler) {
         if (textureView != null && sampler != null) {
-            samplers.put(name, new TextureViewAndSampler(textureView, sampler));
+            // A pending clear can invalidate the encoder even if the binding is unchanged.
             commandEncoder.flushPendingClear((MetalGpuTexture) textureView.texture());
-            markDescriptorDirty(name);
+            TextureViewAndSampler previous = samplers.get(name);
+            if (previous == null || previous.textureView() != textureView || previous.sampler() != sampler) {
+                samplers.put(name, new TextureViewAndSampler(textureView, sampler));
+                markDescriptorDirty(name);
+            }
         } else if (textureView == null && sampler == null) {
-            samplers.remove(name);
+            if (samplers.remove(name) != null) markDescriptorDirty(name);
         } else {
             throw new IllegalArgumentException();
         }
@@ -335,13 +339,6 @@ final class MetalRenderPass implements RenderPassBackend {
         return ((MetalGpuTexture) depthTexture.texture()).mtlPixelFormat();
     }
 
-    MTLPixelFormat stencilAttachmentFormat() {
-        if (depthTexture == null) {
-            return MTLPixelFormat.Invalid;
-        }
-        return ((MetalGpuTexture) depthTexture.texture()).mtlStencilPixelFormat();
-    }
-
     void materializePendingClear() {
         if (clearColor != null || clearDepth != null) {
             renderEncoder();
@@ -499,7 +496,7 @@ final class MetalRenderPass implements RenderPassBackend {
 
         if (pipelineDirty) {
             boolean useDepth = depthAttachmentFormat().value != MTLPixelFormat.Invalid.value;
-            NativeMetalDevice.Resource pipelineHandle = compiledPipeline.getNativePipeline(useDepth);
+            NativeMetalDevice.Resource pipelineHandle = compiledPipeline.getNativePipeline();
             if ((pipelineHandle == null)) {
                 throw new IllegalStateException("Native pipeline is unavailable");
             }

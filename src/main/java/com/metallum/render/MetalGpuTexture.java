@@ -102,10 +102,6 @@ final class MetalGpuTexture extends GpuTexture {
         return this.mtlPixelFormat;
     }
 
-    MTLPixelFormat mtlStencilPixelFormat() {
-        return this.mtlPixelFormat.hasStencil() ? this.mtlPixelFormat : MTLPixelFormat.Invalid;
-    }
-
     @Override
     public void close() {
         if (this.closed) {
