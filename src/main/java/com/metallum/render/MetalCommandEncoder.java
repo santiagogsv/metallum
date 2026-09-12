@@ -244,6 +244,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         submitRenderPass();
         endEncoder();
         commandBuffer().upscale(source.nativeResource(), destination.nativeResource(), fence);
+        destination.markContentsDirty();
     }
 
     void presentTextureToDrawable(final CAMetalLayer layer, final GpuTextureView textureView) {

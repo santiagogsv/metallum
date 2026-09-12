@@ -3,6 +3,7 @@ package com.metallum.mixin.render;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.metallum.Metallum;
+import com.metallum.config.MetalOptions;
 import com.metallum.render.MetalUpscaling;
 import com.metallum.render.RenderScale;
 import com.mojang.blaze3d.pipeline.RenderTarget;
@@ -26,26 +27,33 @@ abstract class MetalUpscalingMixin {
     @Shadow @Final private GlobalSettingsUniform globalSettingsUniform;
     @Shadow @Final @Mutable private RenderTarget mainRenderTarget;
     @Unique private RenderTarget metallum$worldTarget;
-    @Unique private static final double metallum$scale = RenderScale.parse(System.getProperty("metallum.renderScale", "1"));
+    @Unique private int metallum$outputWidth, metallum$outputHeight;
 
     @WrapMethod(method = "renderLevel")
     private void metallum$renderScaledWorld(DeltaTracker delta, Operation<Void> original) {
+        double scale = MetalOptions.SCALE.scale();
         var window = gameRenderState.windowRenderState;
         int width = window.width, height = window.height;
-        if (metallum$scale == 1 || width < 2 || height < 2 || !MetalUpscaling.supported(mainRenderTarget.getColorTexture())) {
+        if (scale == 1 || width < 2 || height < 2 || !MetalUpscaling.supported(mainRenderTarget.getColorTexture())) {
+            if (metallum$worldTarget != null) {
+                metallum$releaseTarget();
+                minecraft.levelRenderer.resize(width, height);
+            }
             original.call(delta);
             return;
         }
-        int scaledWidth = RenderScale.dimension(width, metallum$scale);
-        int scaledHeight = RenderScale.dimension(height, metallum$scale);
-        if (metallum$worldTarget == null || metallum$worldTarget.width != scaledWidth || metallum$worldTarget.height != scaledHeight) {
+        int scaledWidth = RenderScale.dimension(width, scale);
+        int scaledHeight = RenderScale.dimension(height, scale);
+        if (metallum$worldTarget == null || metallum$worldTarget.width != scaledWidth || metallum$worldTarget.height != scaledHeight
+                || metallum$outputWidth != width || metallum$outputHeight != height) {
             if (metallum$worldTarget == null) {
                 metallum$worldTarget = new TextureTarget("Metallum scaled world", scaledWidth, scaledHeight, true, mainRenderTarget.getColorTexture().getFormat());
             } else {
-                // SkyRenderer caches this RenderTarget. Keep its identity across resizes.
+                // Resize the existing target; the sky hook also handles switching back to native.
                 MetalUpscaling.release(metallum$worldTarget.getColorTexture());
                 metallum$worldTarget.resize(scaledWidth, scaledHeight);
             }
+            metallum$outputWidth = width; metallum$outputHeight = height;
             minecraft.levelRenderer.resize(scaledWidth, scaledHeight);
             Metallum.LOGGER.info("[metallum-metalfx] spatial world {}x{} -> {}x{}; UI remains native resolution", scaledWidth, scaledHeight, width, height);
         }
@@ -79,7 +87,6 @@ abstract class MetalUpscalingMixin {
             metallum$worldTarget = null;
         }
     }
-    // Cached world renderers can survive a level change, so retain the target until close.
-    @Inject(method = "close", at = @At("HEAD"))
+    @Inject(method = {"close", "setLevel"}, at = @At("HEAD"))
     private void metallum$releaseWorldTarget(CallbackInfo ci) { metallum$releaseTarget(); }
 }

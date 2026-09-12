@@ -16,3 +16,6 @@ xcrun clang -dynamiclib -DTEST_ABI_VERSION=1 -I native/include native/tests/ffi_
 
 "$javac_bin" --release 25 -d build/native/test-classes src/main/java/com/metallum/render/RenderScale.java native/tests/RenderScaleSmoke.java
 "$java_bin" -cp build/native/test-classes RenderScaleSmoke
+
+"$javac_bin" --release 25 -d build/native/test-classes src/main/java/com/metallum/render/RenderScale.java src/main/java/com/metallum/config/RenderScaleSettings.java native/tests/RenderScaleSettingsSmoke.java
+"$java_bin" -cp build/native/test-classes RenderScaleSettingsSmoke

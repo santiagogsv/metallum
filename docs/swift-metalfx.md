@@ -1,31 +1,28 @@
-# Swift 16.1: allocator retention and optional MetalFX
+# Swift 17: live MetalFX resolution
 
-Targets macOS 27, Apple Silicon, Swift 6.4 and Metal 4. Native ABI 16 is bundled in the jar; remove old metallum.nativeLibrary overrides.
+## Use
 
-## Memory
+Install metallum-0.0.24-swift.17.jar, replacing the previous jar. In Minecraft's standard Options > Video Settings screen, scroll to the MetalFX slider. It ranges from 50% resolution to Off (native, 100%). Minecraft's delayed slider applies changes after adjustment; no restart is needed. This addition is to the standard video settings screen, not Sodium's replacement screen.
 
-Metal allocator reset permits reuse without shrinking allocation. Completed command slots exceeding 64 MiB are now discarded after 120 uses. Smaller slots remain reusable. The interval avoids reallocating every frame. This is not a hard memory cap: active or recurring heavy work can allocate more. Retirement happens after GPU completion.
+Only --enable-native-access=ALL-UNNAMED is needed. Remove old metallum.nativeLibrary overrides. The optional metallum.renderScale argument seeds the first unsaved setting; afterwards config/metallum-render-scale.txt wins, including when saved Off. Changes save atomically per instance.
 
-Enable -Dmetallum.performanceDiagnostics=true to see allocatorTrims and allocator bytes. Check that retained memory settles after loading and resource reloads. Cached MetalFX texture bytes are reported separately. Process memory also includes Java and other Metal allocations.
+85–90% is a conservative starting point, not a guarantee of unchanged visuals. Spatial upscaling reconstructs from fewer pixels; inspect foliage, thin lines and distant geometry while moving. At 50% width and height the world uses one quarter of the native pixels, so noticeable detail loss is likely. The GUI stays at native resolution. Native Off is the only setting that avoids upscaling-related quality loss.
 
-## Enable upscaling
+## Changes and lifetime review
 
-Java arguments:
+- Added a standard Minecraft slider with delayed application and validated saved values (50–100).
+- Off releases the scaled target and Swift scaler cache. World unload and renderer close also release them. Commands retain GPU resources until submission completion.
+- Sky rendering resolves the current main target instead of its construction-time cached target. This supports Off/on transitions, reloads and world changes without using a destroyed target.
+- Output-size changes also resize auxiliary targets when rounding leaves the scaled dimensions unchanged.
+- MetalFX writes invalidate the destination's cached clear state, preventing incorrect redundant-clear decisions.
+- Existing oversized allocator retirement and bounded resource pools remain in place.
 
-```
---enable-native-access=ALL-UNNAMED -Dmetallum.renderScale=0.85
-```
+## Verified and remaining checks
 
-Omit renderScale to disable. Accepted scales are 0.67 up to but excluding 1; invalid values use native resolution. Restart after changing it.
+Build and checkNative passed, including saved settings precedence, Off persistence, malformed values, range boundaries, temporary-file cleanup, Swift command-reference release, descriptor/allocator policy, FFM ownership, packaged ABI and existing adapters. These CPU checks do not validate a transformed Minecraft UI, GPU output or long-run process memory. No claim of zero bugs or zero leaks is made.
 
-The world renders at 85% width and height (about 28% fewer pixels). Swift encodes MetalFX spatial scaling using MTL4FXSpatialScaler, then Minecraft draws its GUI at normal resolution. Later postprocessing also remains full resolution. No temporal history or motion vectors are required. SPIR-V and SPIRV-Cross are unchanged.
+Manual regression: switch Off -> 85 -> 50 -> Off repeatedly; resize and toggle fullscreen at each setting; reload resources; leave and re-enter a world; close/reopen Video Settings and restart to verify persistence. Confirm native GUI sharpness and sky rendering. Use -Dmetallum.performanceDiagnostics=true to compare allocator and upscale bytes after repeated cycles. Cached upscaler bytes should return to zero with Off after a world frame, while in-flight resources retire normally. Process RSS need not immediately shrink because allocators and Java retain reusable memory.
 
-Swift caches a scaler and its private input/output textures. Resizing releases the scaler cache; commands retain resources until completion. The world target object survives resizes and level changes because Minecraft renderers cache it. Its textures resize in place and are destroyed at renderer shutdown. Two copies isolate MetalFX texture requirements from Minecraft resources. Upscaling adds memory and GPU work; it may not help CPU-limited scenes. Unsupported devices keep native resolution.
+Compare frame times at the same viewpoint, power mode and graphics settings. Upscaling adds copies and GPU work; CPU-limited scenes may show little improvement.
 
-## Validation and manual checks
-
-build/checkNative passes: Swift allocator policy and descriptors, Java/C ownership and ABI, render-scale limits, packaged library checks, and existing render adapters. These checks do not execute MetalFX or apply the mixin in a running game. The GPU smoke test cannot run in this tool environment because Metal is unavailable.
-
-Confirm a [metallum-metalfx] dimensions message in the game log. Check foliage, text, resource reloads, resize/fullscreen, world switching, entity outlines and post effects. Compare frame times at the same position/settings/power mode with scale 1 and 0.85. Watch allocatorTrims and memory after repeated reloads. The Swift 16 user log confirms upscaling was active at 1451x816 -> 1708x960. It also exposed a stale sky-renderer target on resize. Swift 16.1 preserves that target identity; repeated resize/fullscreen and world-change testing is still required. Speedup and memory reduction are not established.
-
-API: [Apple MTL4FXSpatialScaler](https://developer.apple.com/documentation/metalfx/mtl4fxspatialscaler).
+[Apple MetalFX documentation](https://developer.apple.com/documentation/metalfx) describes the lower-resolution rendering and reconstruction approach. The recommended percentages above are practical starting points, not Apple quality guarantees.

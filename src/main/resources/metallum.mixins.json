@@ -8,6 +8,8 @@
   "client": [
     "render.PreferredGraphicsApiMixin",
     "render.MetalUpscalingMixin",
+    "render.MetalSkyTargetMixin",
+    "render.MetalVideoSettingsMixin",
     "sodium.DrawBackendMixin",
     "sodium.DrawContextMixin",
     "sodium.SodiumPreferredGraphicsApiMixin"
