@@ -12,7 +12,7 @@ final class DeviceContext {
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 6 }
+public func metallumABIVersion() -> UInt32 { 7 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {
@@ -25,51 +25,77 @@ public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {
 // Temporary migration escape hatch. The returned object is borrowed, never released by Java.
 @c(metallum_device_borrow_mtl)
 public func metallumDeviceBorrowMTL(_ handle: UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer? {
-    guard let handle else { return nil }
-    let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
-    return Unmanaged.passUnretained(context.device as AnyObject).toOpaque()
+    return autoreleasepool {
+        guard let handle else { return nil }
+        let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+        return Unmanaged.passUnretained(context.device as AnyObject).toOpaque()
+    }
 }
 
 @c(metallum_device_destroy)
 public func metallumDeviceDestroy(_ handle: UnsafeMutableRawPointer?) {
-    guard let handle else { return }
-    Unmanaged<DeviceContext>.fromOpaque(handle).release()
+    return autoreleasepool {
+        guard let handle else { return }
+        Unmanaged<DeviceContext>.fromOpaque(handle).release()
+    }
 }
 
 // IDs are local to a device and never reused. Java never sees a Swift object layout.
 @c(metallum_buffer_create)
 public func metallumBufferCreate(_ handle: UnsafeMutableRawPointer?, _ length: UInt64, _ cpuAccessible: UInt32) -> UInt64 {
-    guard let handle, length > 0, length <= UInt64(Int.max), cpuAccessible <= 1 else { return 0 }
-    let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
-    guard length <= UInt64(context.device.maxBufferLength), context.nextBufferID < UInt64.max else { return 0 }
-    let storage: MTLResourceOptions = cpuAccessible == 1 ? .storageModeShared : .storageModePrivate
-    // The current render/blit encoder explicitly fences untracked resources.
-    guard let buffer = context.device.makeBuffer(length: Int(length), options: [storage, .hazardTrackingModeUntracked]) else { return 0 }
-    let id = context.nextBufferID
-    context.nextBufferID += 1
-    context.buffers[id] = buffer
-    return id
+    return autoreleasepool {
+        guard let handle, length > 0, length <= UInt64(Int.max), cpuAccessible <= 1 else { return 0 }
+        let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+        guard length <= UInt64(context.device.maxBufferLength), context.nextBufferID < UInt64.max else { return 0 }
+        let storage: MTLResourceOptions = cpuAccessible == 1 ? .storageModeShared : .storageModePrivate
+        // The current render/blit encoder explicitly fences untracked resources.
+        guard let buffer = context.device.makeBuffer(length: Int(length), options: [storage, .hazardTrackingModeUntracked]) else { return 0 }
+        let id = context.nextBufferID
+        context.nextBufferID += 1
+        context.buffers[id] = buffer
+        return id
+    }
 }
 
 @c(metallum_buffer_borrow_mtl)
 public func metallumBufferBorrowMTL(_ handle: UnsafeMutableRawPointer?, _ id: UInt64) -> UnsafeMutableRawPointer? {
-    guard let handle else { return nil }
-    let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
-    guard let buffer = context.buffers[id] else { return nil }
-    return Unmanaged.passUnretained(buffer as AnyObject).toOpaque()
+    return autoreleasepool {
+        guard let handle else { return nil }
+        let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+        guard let buffer = context.buffers[id] else { return nil }
+        return Unmanaged.passUnretained(buffer as AnyObject).toOpaque()
+    }
 }
 
 @c(metallum_buffer_contents)
 public func metallumBufferContents(_ handle: UnsafeMutableRawPointer?, _ id: UInt64) -> UnsafeMutableRawPointer? {
-    guard let handle else { return nil }
-    let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
-    guard let buffer = context.buffers[id], buffer.storageMode == .shared else { return nil }
-    return buffer.contents()
+    return autoreleasepool {
+        guard let handle else { return nil }
+        let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+        guard let buffer = context.buffers[id], buffer.storageMode == .shared else { return nil }
+        return buffer.contents()
+    }
 }
 
 @c(metallum_buffer_destroy)
 public func metallumBufferDestroy(_ handle: UnsafeMutableRawPointer?, _ id: UInt64) {
-    guard let handle else { return }
-    let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
-    context.buffers.removeValue(forKey: id)
+    return autoreleasepool {
+        guard let handle else { return }
+        let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+        context.buffers.removeValue(forKey: id)
+    }
+}
+
+// Render-thread snapshot. Counts track ownership, not unique allocations (views may alias).
+@c(metallum_memory_snapshot)
+public func metallumMemorySnapshot(_ handle: UnsafeMutableRawPointer?, _ output: UnsafeMutablePointer<UInt64>?) {
+    autoreleasepool {
+        guard let handle, let output else { return }
+        let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+        output[0] = UInt64(context.buffers.count)
+        output[1] = UInt64(context.resources.count)
+        output[2] = UInt64(context.shaderLibraries.count)
+        output[3] = context.buffers.values.reduce(0) { $0 + UInt64($1.length) }
+        output[4] = UInt64(context.device.currentAllocatedSize)
+    }
 }

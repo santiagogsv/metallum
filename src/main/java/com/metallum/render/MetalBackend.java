@@ -48,6 +48,7 @@ public class MetalBackend implements GpuBackend {
             throw new BackendCreationException("Swift Metal initialization failed: " + failure.getMessage(), BackendCreationException.Reason.OTHER);
         }
         boolean transferred = false;
+        CAMetalLayer metalLayer = null;
         try {
             MTLDevice metalDevice = new MTLDevice(nativeOwner.borrowedDevice(), nativeOwner);
             if (metalDevice == null) {
@@ -67,7 +68,6 @@ public class MetalBackend implements GpuBackend {
                 throw new BackendCreationException(e.getMessage(), BackendCreationException.Reason.GLFW_ERROR);
             }
 
-            CAMetalLayer metalLayer;
             try {
                 metalLayer = new CAMetalLayer(metalDevice, cocoa.backingScaleFactor());
             } catch (IllegalStateException e) {
@@ -76,7 +76,7 @@ public class MetalBackend implements GpuBackend {
 
             cocoa.setViewLayer(metalLayer.handle());
 
-            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, "Swift resources + render pipelines, ABI 6");
+            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, "Swift resources + render pipelines, ABI 7");
 
             try {
                 MetalDevice backend = new MetalDevice(defaultShaderSource, debugOptions, metalDevice.handle(), metalLayer, deviceName, cocoa,
@@ -97,7 +97,10 @@ public class MetalBackend implements GpuBackend {
                 throw new BackendCreationException("Metal device initialization failed: " + throwable.getMessage(), BackendCreationException.Reason.OTHER);
             }
         } finally {
-            if (!transferred) nativeOwner.close();
+            if (!transferred) {
+                if (metalLayer != null) metalLayer.close();
+                nativeOwner.close();
+            }
         }
     }
 }

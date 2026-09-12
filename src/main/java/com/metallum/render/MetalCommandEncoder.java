@@ -9,7 +9,6 @@ import com.mojang.blaze3d.buffers.GpuFence;
 import com.mojang.blaze3d.systems.*;
 import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import org.joml.Vector4f;
@@ -45,7 +44,9 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     private MTLCommandEncoder currentEncoder;
     private MemorySegment renderColorAttachment = MemorySegment.NULL;
     private MemorySegment renderDepthAttachment = MemorySegment.NULL;
-    private final Long2ObjectOpenHashMap<ArrayDeque<MTLBuffer>> dynamicBackingPool = new Long2ObjectOpenHashMap<>();
+    private final BoundedBufferPool<MTLBuffer> dynamicBackingPool = new BoundedBufferPool<>(64L * 1024 * 1024, 3, MTLBuffer::close);
+
+    private long nextMemoryReport;
 
     MetalCommandEncoder(final MetalDevice device) {
         this.device = device;
@@ -124,6 +125,13 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
 
         transientMemory.rotate();
         destroyQueue.rotate();
+        if (Boolean.getBoolean("metallum.memoryDiagnostics") && System.nanoTime() >= nextMemoryReport) {
+            nextMemoryReport = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            var memory = device.nativeOwner().memoryStats();
+            com.metallum.Metallum.LOGGER.info("[metallum-memory] buffers={}, resources={}, libraries={}, bufferMiB={}, metalMiB={}, idlePoolMiB={}",
+                    memory.buffers(), memory.resources(), memory.libraries(), memory.bufferBytes() / 1048576,
+                    memory.metalBytes() / 1048576, dynamicBackingPool.bytes() / 1048576);
+        }
     }
 
     MTLRenderCommandEncoder renderCommandEncoder(
@@ -344,15 +352,13 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     }
 
     private MTLBuffer acquireDynamicBacking(final long size) {
-        ArrayDeque<MTLBuffer> bucket = dynamicBackingPool.get(size);
-        if (bucket != null && !bucket.isEmpty()) {
-            return bucket.pop();
-        }
+        MTLBuffer cached = dynamicBackingPool.take(size);
+        if (cached != null) return cached;
         return device.allocateBuffer(size, true);
     }
 
     private void recycleDynamicBacking(final MTLBuffer buffer, final long size) {
-        queueForDestroy(() -> dynamicBackingPool.computeIfAbsent(size, _ -> new ArrayDeque<>()).push(buffer));
+        queueForDestroy(() -> dynamicBackingPool.recycle(size, buffer));
     }
 
     @Override
@@ -527,6 +533,11 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         return new MetalFence(this, currentSubmitIndex);
     }
 
+    void forgetTexture(MetalGpuTexture texture) {
+        pendingColorClears.remove(texture);
+        pendingDepthClears.remove(texture);
+    }
+
     void queueForDestroy(final Runnable destroyAction) {
         destroyQueue.add(destroyAction);
     }
@@ -572,12 +583,9 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         transientMemory.close();
         device.queueNativeRelease(() -> ObjC.release(fence.handle()));
         destroyQueue.close();
-        for (ArrayDeque<MTLBuffer> bucket : dynamicBackingPool.values()) {
-            for (MTLBuffer buffer : bucket) {
-                buffer.close();
-            }
-        }
-        dynamicBackingPool.clear();
+        dynamicBackingPool.close();
+        pendingColorClears.clear();
+        pendingDepthClears.clear();
     }
 
     void waitForSubmittedGpuWork() {

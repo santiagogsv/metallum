@@ -91,6 +91,7 @@ final class MetalGpuTexture extends GpuTexture {
             throw new IllegalStateException("Too many views removed from texture");
         }
         if (this.closed && this.views == 0 && this.nativeHandle != null) {
+            this.device.forgetTexture(this);
             this.nativeHandle = null;
             this.device.queueNativeRelease(this.nativeOwner::close);
         }

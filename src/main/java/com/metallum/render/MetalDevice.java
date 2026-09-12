@@ -189,6 +189,7 @@ final class MetalDevice implements GpuDeviceBackend {
             this.cocoa.clearViewLayer();
         } catch (Throwable ignored) {
         }
+        this.metalLayer.close();
         MTLBuiltinPipelines.close();
         this.commandQueue.close();
         for (var state : depthStencilStates.values()) {
@@ -232,6 +233,8 @@ final class MetalDevice implements GpuDeviceBackend {
     }
 
     NativeMetalDevice nativeOwner() { return this.nativeOwner; }
+
+    void forgetTexture(MetalGpuTexture texture) { this.commandEncoder.forgetTexture(texture); }
 
     void queueNativeRelease(Runnable release) {
         this.commandEncoder.queueForDestroy(release);

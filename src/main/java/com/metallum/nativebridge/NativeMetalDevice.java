@@ -21,7 +21,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
-    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate;
+    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot;
     private final MemorySegment borrowedDevice;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
@@ -32,7 +32,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 6) throw new IllegalStateException("Expected Metallum native ABI 6, found " + abiVersion);
+            if (abiVersion != 7) throw new IllegalStateException("Expected Metallum native ABI 7, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             MethodHandle borrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -56,6 +56,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             depthCreate = linker.downcallHandle(symbols.findOrThrow("metallum_depth_state_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_INT));
             presentSamplerCreate = linker.downcallHandle(symbols.findOrThrow("metallum_present_sampler_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT));
             bufferTextureCreate = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_texture_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG));
+            memorySnapshot = linker.downcallHandle(symbols.findOrThrow("metallum_memory_snapshot"), FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
             context = (MemorySegment) create.invokeExact();
             if (context.address() == 0) throw new IllegalStateException("Swift could not create a Metal device");
             try {
@@ -147,6 +148,18 @@ public final class NativeMetalDevice implements AutoCloseable {
         checkOpen();
         try { shaderLibrariesClear.invokeExact(context); }
         catch (Throwable failure) { throw new IllegalStateException("Cannot clear Swift shader libraries", failure); }
+    }
+
+    public record MemoryStats(long buffers, long resources, long libraries, long bufferBytes, long metalBytes) {}
+
+    public MemoryStats memoryStats() {
+        checkOpen();
+        try (Arena call = Arena.ofConfined()) {
+            var output = call.allocate(JAVA_LONG, 5);
+            memorySnapshot.invokeExact(context, output);
+            return new MemoryStats(output.getAtIndex(JAVA_LONG, 0), output.getAtIndex(JAVA_LONG, 1),
+                    output.getAtIndex(JAVA_LONG, 2), output.getAtIndex(JAVA_LONG, 3), output.getAtIndex(JAVA_LONG, 4));
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal memory", failure); }
     }
 
     public Resource createDepthState(long compare, boolean write) {

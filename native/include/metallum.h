@@ -62,6 +62,10 @@ uint64_t metallum_present_sampler_create(void *context, uint32_t linear);
 uint64_t metallum_buffer_texture_create(void *context, uint64_t buffer_id, uint64_t format,
                                       uint64_t offset, uint64_t width, uint64_t byte_length);
 
+/* ABI 7: output points to five uint64_t words: buffer entries, resource entries,
+ * cached libraries, owned buffer bytes, MTLDevice.currentAllocatedSize bytes.
+ * Render thread only; counts may include aliased resources. */
+void metallum_memory_snapshot(void *context, uint64_t *output);
 #ifdef __cplusplus
 }
 #endif

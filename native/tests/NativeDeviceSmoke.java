@@ -63,9 +63,12 @@ public final class NativeDeviceSmoke {
                 catch (IllegalArgumentException expected) { }
                 try { device.createSampler(false, false, false, false, 17, 0); throw new AssertionError("Invalid anisotropy accepted"); }
                 catch (IllegalArgumentException expected) { }
+                var beforeState = device.memoryStats();
                 try (var depth = device.createDepthState(3, true); var sampler = device.createPresentSampler(true)) {
                     if (depth.borrowedHandle().address() == 0 || sampler.borrowedHandle().address() == 0) throw new AssertionError("Missing state");
                 }
+                var afterState = device.memoryStats();
+                if (beforeState.resources() != afterState.resources() || beforeState.buffers() != afterState.buffers()) throw new AssertionError("State ownership leak");
                 try { device.createDepthState(8, false); throw new AssertionError("Invalid depth function accepted"); }
                 catch (IllegalStateException expected) { }
                 var texelBuffer = device.createBuffer(1024, true);
@@ -99,6 +102,8 @@ public final class NativeDeviceSmoke {
                 catch (IllegalStateException expected) { }
                 try { device.createBuffer(0, true); throw new AssertionError("Zero allocation accepted"); }
                 catch (IllegalArgumentException expected) { }
+                var remaining = device.memoryStats();
+                if (remaining.buffers() != 0 || remaining.resources() != 0) throw new AssertionError("Owned resources remain after cycle: " + remaining);
             }
             device.close(); // Java close is idempotent; the C destroy operation is not.
             try {
@@ -127,7 +132,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 6")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 7")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

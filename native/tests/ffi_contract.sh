@@ -11,3 +11,5 @@ xcrun clang -dynamiclib -DTEST_ABI_VERSION=1 -I native/include native/tests/ffi_
     src/main/java/com/metallum/nativebridge/NativeMetalDevice.java src/main/java/com/metallum/nativebridge/NativePipelineDescriptor.java native/tests/NativeDeviceSmoke.java
 "$java_bin" --enable-native-access=ALL-UNNAMED -cp build/native/test-classes \
     NativeDeviceSmoke "$PWD/build/native/libffi_fixture.dylib" "$PWD/build/native/libold_abi_fixture.dylib"
+"$javac_bin" --release 25 -d build/native/test-classes src/main/java/com/metallum/render/BoundedBufferPool.java native/tests/BoundedBufferPoolSmoke.java
+"$java_bin" -cp build/native/test-classes com.metallum.render.BoundedBufferPoolSmoke
