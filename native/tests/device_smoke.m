@@ -9,7 +9,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 13);
+        assert(metallum_abi_version() == 14);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -90,7 +90,7 @@ int main(void) {
             assert(shader_error[0] != 0);
             assert(metallum_function_create(context, "invalid", "first", shader_error, sizeof(shader_error)) == 0);
             assert(shader_error[0] != 0);
-            const char *render_msl = "#include <metal_stdlib>\nusing namespace metal; vertex float4 vs(uint id [[vertex_id]]) { return float4(0,0,0,1); } fragment float4 fs() { return float4(1); }";
+            const char *render_msl = "#include <metal_stdlib>\nusing namespace metal; struct V { float4 position [[position]]; float4 color; }; vertex V vs(uint id [[vertex_id]], constant float4& color [[buffer(0)]]) { float2 p[3] = {float2(-1,-1),float2(3,-1),float2(-1,3)}; return V{float4(p[id],0,1),color}; } fragment float4 fs(V v [[stage_in]]) { return v.color; }";
             uint64_t vs = metallum_function_create(context, render_msl, "vs", shader_error, sizeof(shader_error));
             uint64_t fs = metallum_function_create(context, render_msl, "fs", shader_error, sizeof(shader_error));
             uint64_t description[] = {70, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -116,12 +116,44 @@ int main(void) {
             memcpy(draw_words, viewport_words, sizeof(draw_words));
             assert(metallum_render_command(context, draw_pass, 15, 0, 0, draw_words) == 1);
             int64_t triangle_words[8] = {MTLPrimitiveTypeTriangle, 0, 3, 1, 0, 0, 0, 0};
+            // Cross a staging-chunk boundary, then overwrite the caller's bytes.
+            float inline_data[1024] = {1, 0, 0, 1};
+            for (int bind = 0; bind < 20; ++bind)
+                assert(metallum_render_bytes(context, draw_pass, inline_data, sizeof(inline_data), 0) == 1);
+            memset(inline_data, 0, sizeof(inline_data));
             assert(metallum_render_command(context, draw_pass, 17, 0, 0, triangle_words) == 1);
             assert(metallum_render_command(context, draw_pass, 99, 0, 0, triangle_words) == 0);
             metallum_resource_destroy(context, draw_pass);
             assert(metallum_render_command(context, draw_pass, 17, 0, 0, triangle_words) == 0);
+            // Reusing the same argument tables in another pass must preserve the first draw.
+            uint64_t green_texture = metallum_texture_create(context, MTLPixelFormatRGBA8Unorm, 8, 8, 1, 1, 0, 1, NULL);
+            uint64_t green_pass = metallum_render_pass_create(context, draw_command, green_texture, 0, 2, 0, draw_clear);
+            assert(green_pass);
+            assert(metallum_render_command(context, green_pass, 0, pipeline, 0, draw_words) == 1);
+            assert(metallum_render_command(context, green_pass, 15, 0, 0, draw_words) == 1);
+            float green[] = {0, 1, 0, 1};
+            assert(metallum_render_bytes(context, green_pass, green, sizeof(green), 0) == 1);
+            assert(metallum_render_command(context, green_pass, 17, 0, 0, triangle_words) == 1);
+            metallum_resource_destroy(context, green_pass);
+            uint64_t red_pixels = metallum_buffer_create(context, 256, 1);
+            uint64_t green_pixels = metallum_buffer_create(context, 256, 1);
+            uint64_t pixel_fence = metallum_fence_create(context);
+            uint64_t red_copy[] = {2, draw_texture, red_pixels, 0,0,0,0,8,8,0,0,0,0,32,256,0};
+            uint64_t green_copy[] = {2, green_texture, green_pixels, 0,0,0,0,8,8,0,0,0,0,32,256,0};
+            assert(metallum_copy_pass(context, draw_command, pixel_fence, red_copy, 16, shader_error, sizeof(shader_error)) == 1);
+            assert(metallum_copy_pass(context, draw_command, pixel_fence, green_copy, 16, shader_error, sizeof(shader_error)) == 1);
+            // Command ownership must outlive removal of application resource IDs.
+            metallum_resource_destroy(context, green_texture);
+            metallum_resource_destroy(context, pixel_fence);
             uint64_t draw_submission = metallum_submit(context, draw_command);
             assert(draw_submission && metallum_submission_wait(context, draw_submission, 5000, shader_error, sizeof(shader_error)) == 1);
+            const uint8_t *red_result = metallum_buffer_contents(context, red_pixels);
+            const uint8_t *green_result = metallum_buffer_contents(context, green_pixels);
+            for (int pixel = 0; pixel < 64; ++pixel) {
+                assert(red_result[pixel*4] == 255 && red_result[pixel*4+1] == 0 && red_result[pixel*4+3] == 255);
+                assert(green_result[pixel*4] == 0 && green_result[pixel*4+1] == 255 && green_result[pixel*4+3] == 255);
+            }
+            metallum_buffer_destroy(context, red_pixels); metallum_buffer_destroy(context, green_pixels);
             metallum_resource_destroy(context, draw_submission);
             metallum_resource_destroy(context, draw_command);
             metallum_resource_destroy(context, draw_texture);

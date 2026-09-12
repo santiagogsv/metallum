@@ -5,8 +5,10 @@ import Metal
 // Keeping the command alive also makes exceptional cleanup safe.
 final class NativeRenderPass {
     let command: NativeCommand
-    let encoder: any MTLRenderCommandEncoder
-    init(command: NativeCommand, encoder: any MTLRenderCommandEncoder) {
+    let encoder: any MTL4RenderCommandEncoder
+    var vertexBuffers = [MTLBuffer?](repeating: nil, count: 31)
+    var fragmentBuffers = [MTLBuffer?](repeating: nil, count: 31)
+    init(command: NativeCommand, encoder: any MTL4RenderCommandEncoder) {
         self.command = command
         self.encoder = encoder
     }
@@ -14,11 +16,11 @@ final class NativeRenderPass {
 }
 
 struct RenderPassPolicy {
-    static func descriptor(colorLoad: UInt32, depthLoad: UInt32, clear: [Double]) -> MTLRenderPassDescriptor? {
+    static func descriptor(colorLoad: UInt32, depthLoad: UInt32, clear: [Double]) -> MTL4RenderPassDescriptor? {
         guard colorLoad <= 2, depthLoad <= 2, clear.count == 5,
               let colorAction = MTLLoadAction(rawValue: UInt(colorLoad)),
               let depthAction = MTLLoadAction(rawValue: UInt(depthLoad)) else { return nil }
-        let descriptor = MTLRenderPassDescriptor()
+        let descriptor = MTL4RenderPassDescriptor()
         descriptor.colorAttachments[0].loadAction = colorAction
         descriptor.colorAttachments[0].storeAction = .store
         descriptor.colorAttachments[0].clearColor = MTLClearColor(red: clear[0], green: clear[1], blue: clear[2], alpha: clear[3])
@@ -53,6 +55,11 @@ public func metallumRenderPassCreate(_ handle: UnsafeMutableRawPointer?, _ comma
             }
         }
         guard let encoder = command.metal.makeRenderCommandEncoder(descriptor: descriptor) else { return 0 }
+        command.resetBindings()
+        encoder.setArgumentTable(command.vertex.metal, stages: .vertex)
+        encoder.setArgumentTable(command.fragment.metal, stages: .fragment)
+        // Preserve ordering and visibility across render/copy passes and submissions.
+        encoder.barrier(afterQueueStages: .all, beforeStages: [.vertex, .fragment], visibilityOptions: .device)
         command.encoderOpen = true
         command.hold(context.resources[color]); command.hold(context.resources[depth])
         return context.storeResource(NativeRenderPass(command: command, encoder: encoder))

@@ -91,9 +91,12 @@ uint64_t metallum_render_pass_create(void *context, uint64_t command, uint64_t c
 int32_t metallum_render_command(void *context, uint64_t pass, uint32_t op, uint64_t p0, uint64_t p1, const int64_t *words);
 uint64_t metallum_layer_create(void *context, double scale);
 int32_t metallum_layer_configure(void *context, uint64_t layer, double width, double height, uint32_t immediate);
-/* Acquires and presents the drawable entirely in Swift. No available drawable is a successful skipped frame. */
+/* Acquires and encodes the drawable entirely in Swift. Submission performs the
+ * Metal 4 queue wait/commit/signal/present sequence. No available drawable is a skipped frame. */
 int32_t metallum_present(void *context, uint64_t command, uint64_t layer, uint64_t source, uint64_t fence, uint64_t pipeline, uint64_t nearest, uint64_t linear);
-/* ABI 13: render resources use device-local IDs; only inline bytes are pointers. */
+/* ABI 14: Metal 4 compiler/queue/encoders. Resource IDs and payloads are unchanged.
+ * Inline bytes are copied into command-owned storage before returning; length <= 4096.
+ * Command storage and residency are recycled only after GPU completion. */
 int32_t metallum_render_bytes(void *context, uint64_t pass, const void *bytes, uint64_t length, uint64_t index);
 uint64_t metallum_texture_info(void *context, uint64_t texture, uint32_t field);
 int32_t metallum_command_debug(void *context, uint64_t command, const char *label);

@@ -4,6 +4,29 @@ import Metal
 @main
 struct ResourceDescriptorSmoke {
     static func main() {
+        // Reproduces the macOS 27 queue descriptor lifetime crash without a GPU.
+        // Both successful and throwing creation must relinquish the borrowed queue.
+        for throwing in [false, true] {
+            for _ in 0..<100 {
+                weak var retired: DispatchQueue?
+                autoreleasepool {
+                    let queue = DispatchQueue(label: "metallum.feedback.lifetime.test")
+                    retired = queue
+                    autoreleasepool {
+                        do {
+                            try CommandQueueConfiguration.withDescriptor(feedbackQueue: queue) { descriptor in
+                                precondition(descriptor.feedbackQueue != nil)
+                                if throwing { throw PipelineDescriptionError.invalid("Test queue creation failure") }
+                            }
+                            precondition(!throwing)
+                        } catch { precondition(throwing) }
+                    }
+                    // Previously trapped or crashed here after descriptor destruction.
+                    queue.sync {}
+                }
+                precondition(retired == nil, "Feedback queue leaked")
+            }
+        }
         for load: UInt32 in 0...2 {
             let pass = RenderPassPolicy.descriptor(colorLoad: load, depthLoad: load, clear: [0.1, 0.2, 0.3, 0.4, 0.75])!
             precondition(pass.colorAttachments[0].loadAction.rawValue == UInt(load))
@@ -78,7 +101,6 @@ struct ResourceDescriptorSmoke {
         }
         let basic: [UInt64] = [70, 252, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         let simple = try! PipelineDescriptors.make(basic)
-        precondition(simple.depthAttachmentPixelFormat == .depth32Float)
         if let vertex = simple.vertexDescriptor { precondition(vertex.attributes[0].format == .invalid) }
         precondition(simple.colorAttachments[0].pixelFormat == .rgba8Unorm)
         var packed = basic
@@ -86,7 +108,7 @@ struct ResourceDescriptorSmoke {
         packed[11] = 1; packed[12] = 1
         packed += [0, UInt64(MTLVertexFormat.float3.rawValue), 4, 7, 7, 16, UInt64(MTLVertexStepFunction.perInstance.rawValue), 2]
         let pipeline = try! PipelineDescriptors.make(packed)
-        precondition(pipeline.colorAttachments[0].isBlendingEnabled)
+        precondition(pipeline.colorAttachments[0].blendingState == .enabled)
         precondition(pipeline.colorAttachments[0].sourceRGBBlendFactor == .sourceAlpha)
         precondition(pipeline.vertexDescriptor!.attributes[0].bufferIndex == 7)
         precondition(pipeline.vertexDescriptor!.attributes[0].offset == 4)
@@ -111,6 +133,22 @@ struct ResourceDescriptorSmoke {
             precondition(sampler.minFilter == (linear ? .linear : .nearest) && sampler.magFilter == sampler.minFilter)
             precondition(sampler.mipFilter == .notMipmapped && sampler.sAddressMode == .clampToEdge && sampler.tAddressMode == .clampToEdge)
         }
+        var cursor = 0
+        for length in Array(repeating: [0, 16, 4096, 31, 256], count: 1000).flatMap({ $0 }) {
+            let allocation = InlinePlacement.next(cursor: cursor, length: length)!
+            precondition(allocation.offset % 256 == 0)
+            precondition(allocation.offset + length <= InlinePlacement.chunkSize)
+            precondition(allocation.chunk * InlinePlacement.chunkSize + allocation.offset >= cursor)
+            cursor = allocation.end
+        }
+        let crossing = InlinePlacement.next(cursor: 65520, length: 4096)!
+        precondition(crossing.chunk == 1 && crossing.offset == 0 && crossing.end == 69632)
+        precondition(InlinePlacement.next(cursor: Int.max, length: 16) == nil)
+        precondition(InlinePlacement.next(cursor: 0, length: 4097) == nil)
+        let failed = SubmissionCompletion()
+        DispatchQueue.global().async { failed.finish(error: "GPU failure") }
+        precondition(failed.wait(milliseconds: 1000) && failed.error == "GPU failure")
+        precondition(failed.wait(milliseconds: 0) && failed.error == "GPU failure")
         let pending = SubmissionCompletion()
         precondition(!pending.wait(milliseconds: 0))
         precondition(!pending.wait(milliseconds: 1))

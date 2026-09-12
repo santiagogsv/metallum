@@ -51,21 +51,25 @@ public func metallumPresent(_ handle: UnsafeMutableRawPointer?, _ commandID: UIn
         guard fenceID == 0 || fence != nil else { return 0 }
         guard let drawable = layer.nextDrawable() else { return 1 }
         let target = drawable.texture
-        let descriptor = MTLRenderPassDescriptor()
+        let descriptor = MTL4RenderPassDescriptor()
         descriptor.colorAttachments[0].texture = target
         descriptor.colorAttachments[0].loadAction = .dontCare
         descriptor.colorAttachments[0].storeAction = .store
         guard let encoder = command.metal.makeRenderCommandEncoder(descriptor: descriptor) else { return 0 }
-        if let fence { encoder.waitForFence(fence, before: .fragment) }
+        if let fence { encoder.waitForFence(fence, beforeEncoderStages: .fragment) }
         encoder.setViewport(MTLViewport(originX: 0, originY: 0, width: Double(target.width), height: Double(target.height), znear: 0, zfar: 1))
         encoder.setRenderPipelineState(state)
-        encoder.setFragmentTexture(texture, index: 0)
+        command.resetBindings()
+        encoder.barrier(afterQueueStages: .all, beforeStages: [.vertex, .fragment], visibilityOptions: .device)
+        encoder.setArgumentTable(command.vertex.metal, stages: .vertex)
+        encoder.setArgumentTable(command.fragment.metal, stages: .fragment)
+        command.fragment.setTexture(texture.gpuResourceID, index: 0)
         let scaling = texture.width != target.width || texture.height != target.height
-        encoder.setFragmentSamplerState(scaling ? linearState : nearestState, index: 0)
-        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3, instanceCount: 1, baseInstance: 0)
-        if let fence { encoder.updateFence(fence, after: .fragment) }
+        command.fragment.setSamplerState((scaling ? linearState : nearestState).gpuResourceID, index: 0)
+        encoder.drawPrimitives(primitiveType: .triangle, vertexStart: 0, vertexCount: 3, instanceCount: 1, baseInstance: 0)
+        if let fence { encoder.updateFence(fence, afterEncoderStages: .fragment) }
         encoder.endEncoding()
-        command.metal.present(drawable)
+        command.drawables.append(drawable)
         for id in [source, fenceID, pipeline, nearest, linear, layerID] { command.hold(context.resources[id]) }
         command.hold(drawable as AnyObject)
         command.hold(target as AnyObject)

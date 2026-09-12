@@ -70,6 +70,7 @@ public func metallumResourceBorrowMTL(_ handle: UnsafeMutableRawPointer?, _ id: 
         guard let handle else { return nil }
         let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
         guard let object = context.resources[id] else { return nil }
+        if let shader = object as? NativeShaderFunction { return Unmanaged.passUnretained(shader.function as AnyObject).toOpaque() }
         if let pass = object as? NativeRenderPass { return Unmanaged.passUnretained(pass.encoder as AnyObject).toOpaque() }
         return Unmanaged.passUnretained(object).toOpaque()
     }
@@ -115,6 +116,7 @@ enum ResourceDescriptors {
         guard repeatU <= 1, repeatV <= 1, linearMin <= 1, linearMag <= 1,
               anisotropy >= 1, anisotropy <= 16 else { return nil }
         let descriptor = MTLSamplerDescriptor()
+        descriptor.supportArgumentBuffers = true
         descriptor.sAddressMode = repeatU == 1 ? .repeat : .clampToEdge
         descriptor.tAddressMode = repeatV == 1 ? .repeat : .clampToEdge
         descriptor.minFilter = linearMin == 1 ? .linear : .nearest
@@ -180,6 +182,7 @@ extension ResourceDescriptors {
     }
     static func presentSampler(linear: Bool) -> MTLSamplerDescriptor {
         let descriptor = MTLSamplerDescriptor()
+        descriptor.supportArgumentBuffers = true
         descriptor.minFilter = linear ? .linear : .nearest
         descriptor.magFilter = linear ? .linear : .nearest
         descriptor.mipFilter = .notMipmapped

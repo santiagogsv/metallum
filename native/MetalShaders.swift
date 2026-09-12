@@ -25,6 +25,21 @@ enum ShaderCompilation {
     }
 }
 
+// Keep the source library alive independently of the reloadable library cache.
+final class NativeShaderFunction {
+    let function: any MTLFunction
+    let library: any MTLLibrary
+    init(function: any MTLFunction, library: any MTLLibrary) {
+        self.function = function; self.library = library
+    }
+    func descriptor() -> MTL4LibraryFunctionDescriptor {
+        let descriptor = MTL4LibraryFunctionDescriptor()
+        descriptor.name = function.name
+        descriptor.library = library
+        return descriptor
+    }
+}
+
 @c(metallum_function_create)
 public func metallumFunctionCreate(_ handle: UnsafeMutableRawPointer?, _ source: UnsafePointer<CChar>?,
                                    _ entry: UnsafePointer<CChar>?, _ errorOutput: UnsafeMutablePointer<CChar>?,
@@ -50,7 +65,7 @@ public func metallumFunctionCreate(_ handle: UnsafeMutableRawPointer?, _ source:
                 ShaderCompilation.writeError("MSL entry point not found: \(name)", to: errorOutput, capacity: errorCapacity)
                 return 0
             }
-            let id = context.storeResource(function as AnyObject)
+            let id = context.storeResource(NativeShaderFunction(function: function, library: library))
             if id == 0 { ShaderCompilation.writeError("Native resource IDs exhausted", to: errorOutput, capacity: errorCapacity) }
             return id
         } catch {

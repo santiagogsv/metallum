@@ -8,22 +8,21 @@ enum PipelineDescriptionError: LocalizedError {
 
 enum PipelineDescriptors {
     // ABI: 13 header words, followed by attributes and layouts (4 words per entry).
-    static func make(_ words: [UInt64]) throws -> MTLRenderPipelineDescriptor {
+    static func make(_ words: [UInt64]) throws -> MTL4RenderPipelineDescriptor {
         guard words.count >= 13, words[11] <= 31, words[12] <= 31,
               words.count == 13 + 4 * Int(words[11] + words[12]), words[3] <= 15, words[4] <= 1,
               let color = MTLPixelFormat(rawValue: UInt(words[0])),
-              let depth = MTLPixelFormat(rawValue: UInt(words[1])),
-              let stencil = MTLPixelFormat(rawValue: UInt(words[2])) else {
+              MTLPixelFormat(rawValue: UInt(words[1])) != nil,
+              MTLPixelFormat(rawValue: UInt(words[2])) != nil else {
             throw PipelineDescriptionError.invalid("Invalid pipeline header or entry counts")
         }
-        let descriptor = MTLRenderPipelineDescriptor()
+        let descriptor = MTL4RenderPipelineDescriptor()
         let attachment = descriptor.colorAttachments[0]!
         attachment.pixelFormat = color
         attachment.writeMask = MTLColorWriteMask(rawValue: UInt(words[3]))
-        attachment.isBlendingEnabled = words[4] == 1
-        descriptor.depthAttachmentPixelFormat = depth
-        descriptor.stencilAttachmentPixelFormat = stencil
-        if attachment.isBlendingEnabled {
+        attachment.blendingState = words[4] == 1 ? .enabled : .disabled
+        // Metal 4 derives depth/stencil formats from the render pass attachments.
+        if words[4] == 1 {
             guard let srcRGB = MTLBlendFactor(rawValue: UInt(words[5])), let dstRGB = MTLBlendFactor(rawValue: UInt(words[6])),
                   let opRGB = MTLBlendOperation(rawValue: UInt(words[7])), let srcAlpha = MTLBlendFactor(rawValue: UInt(words[8])),
                   let dstAlpha = MTLBlendFactor(rawValue: UInt(words[9])), let opAlpha = MTLBlendOperation(rawValue: UInt(words[10])) else {
@@ -84,14 +83,15 @@ public func metallumPipelineCreate(_ handle: UnsafeMutableRawPointer?, _ vertexI
     return autoreleasepool {
         let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
         do {
-            guard let vertex = context.resources[vertexID] as? any MTLFunction, vertex.functionType == .vertex,
-                  let fragment = context.resources[fragmentID] as? any MTLFunction, fragment.functionType == .fragment else {
+            guard let vertex = context.resources[vertexID] as? NativeShaderFunction, vertex.function.functionType == .vertex,
+                  let fragment = context.resources[fragmentID] as? NativeShaderFunction, fragment.function.functionType == .fragment else {
                 throw PipelineDescriptionError.invalid("Pipeline requires vertex and fragment function IDs")
             }
             let descriptor = try PipelineDescriptors.make(Array(UnsafeBufferPointer(start: words, count: Int(count))))
-            descriptor.vertexFunction = vertex
-            descriptor.fragmentFunction = fragment
-            let pipeline = try context.device.makeRenderPipelineState(descriptor: descriptor)
+            descriptor.vertexFunctionDescriptor = vertex.descriptor()
+            descriptor.fragmentFunctionDescriptor = fragment.descriptor()
+            guard let compiler = context.compiler else { throw PipelineDescriptionError.invalid("Cannot create Metal 4 compiler") }
+            let pipeline = try compiler.makeRenderPipelineState(descriptor: descriptor, compilerTaskOptions: nil)
             let id = context.storeResource(pipeline as AnyObject)
             if id == 0 { throw PipelineDescriptionError.invalid("Native resource IDs exhausted") }
             return id

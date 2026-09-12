@@ -57,16 +57,17 @@ public func metallumCopyPass(_ handle: UnsafeMutableRawPointer?, _ commandID: UI
             default:
                 guard let srcTexture, let dstTexture, d.region(srcTexture, destination: false), d.region(dstTexture, destination: true) else { throw PipelineDescriptionError.invalid("Invalid texture copy region") }
             }
-            guard let encoder = command.metal.makeBlitCommandEncoder() else { throw PipelineDescriptionError.invalid("Cannot open Metal copy pass") }
-            encoder.waitForFence(fence)
-            defer { encoder.updateFence(fence); encoder.endEncoding() }
+            guard let encoder = command.metal.makeComputeCommandEncoder() else { throw PipelineDescriptionError.invalid("Cannot open Metal copy pass") }
+            encoder.barrier(afterQueueStages: .all, beforeStages: .blit, visibilityOptions: .device)
+            encoder.waitForFence(fence, beforeEncoderStages: .blit)
+            defer { encoder.updateFence(fence, afterEncoderStages: .blit); encoder.endEncoding() }
             let size = MTLSize(width: d[7], height: d[8], depth: 1)
             let src = MTLOrigin(x: d[5], y: d[6], z: 0), dst = MTLOrigin(x: d[11], y: d[12], z: 0)
             switch d[0] {
-            case 0: encoder.copy(from: srcBuffer!, sourceOffset: d[3], to: dstBuffer!, destinationOffset: d[9], size: d[15])
-            case 1: encoder.copy(from: srcBuffer!, sourceOffset: d[3], sourceBytesPerRow: d[13], sourceBytesPerImage: d[14], sourceSize: size, to: dstTexture!, destinationSlice: d[9], destinationLevel: d[10], destinationOrigin: dst)
-            case 2: encoder.copy(from: srcTexture!, sourceSlice: d[3], sourceLevel: d[4], sourceOrigin: src, sourceSize: size, to: dstBuffer!, destinationOffset: d[9], destinationBytesPerRow: d[13], destinationBytesPerImage: d[14])
-            default: encoder.copy(from: srcTexture!, sourceSlice: d[3], sourceLevel: d[4], sourceOrigin: src, sourceSize: size, to: dstTexture!, destinationSlice: d[9], destinationLevel: d[10], destinationOrigin: dst)
+            case 0: encoder.copy(sourceBuffer: srcBuffer!, sourceOffset: d[3], destinationBuffer: dstBuffer!, destinationOffset: d[9], size: d[15])
+            case 1: encoder.copy(sourceBuffer: srcBuffer!, sourceOffset: d[3], sourceBytesPerRow: d[13], sourceBytesPerImage: d[14], sourceSize: size, destinationTexture: dstTexture!, destinationSlice: d[9], destinationLevel: d[10], destinationOrigin: dst)
+            case 2: encoder.copy(sourceTexture: srcTexture!, sourceSlice: d[3], sourceLevel: d[4], sourceOrigin: src, sourceSize: size, destinationBuffer: dstBuffer!, destinationOffset: d[9], destinationBytesPerRow: d[13], destinationBytesPerImage: d[14])
+            default: encoder.copy(sourceTexture: srcTexture!, sourceSlice: d[3], sourceLevel: d[4], sourceOrigin: src, sourceSize: size, destinationTexture: dstTexture!, destinationSlice: d[9], destinationLevel: d[10], destinationOrigin: dst)
             }
             command.hold(fence as AnyObject)
             switch d[0] {

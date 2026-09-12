@@ -7,7 +7,22 @@ final class DeviceContext {
     var nextResourceID: UInt64 = 1
     var buffers: [UInt64: MTLBuffer] = [:]
     var nextBufferID: UInt64 = 1
-    lazy var commandQueue: (any MTLCommandQueue)? = device.makeCommandQueue()
+    let feedbackQueue = DispatchQueue(label: "com.metallum.metal4.feedback")
+    lazy var commandQueue: (any MTL4CommandQueue)? = {
+        try? CommandQueueConfiguration.withDescriptor(feedbackQueue: feedbackQueue) {
+            try device.makeMTL4CommandQueue(descriptor: $0)
+        }
+    }()
+    lazy var compiler: (any MTL4Compiler)? = try? device.makeCompiler(descriptor: MTL4CompilerDescriptor())
+    var idleCommandSlots: [CommandSlot] = []
+    func acquireCommandSlot() throws -> CommandSlot {
+        if let slot = idleCommandSlots.popLast() { return slot }
+        return try CommandSlot(device: device)
+    }
+    func recycleCommandSlot(_ slot: CommandSlot) {
+        slot.reset()
+        if idleCommandSlots.count < 3 { idleCommandSlots.append(slot) }
+    }
     // Empty sets may be reused only after a completed submission retires them.
     var idleResidencySets: [any MTLResidencySet] = []
     func acquireResidencySet() throws -> any MTLResidencySet {
@@ -25,7 +40,7 @@ final class DeviceContext {
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 13 }
+public func metallumABIVersion() -> UInt32 { 14 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {
