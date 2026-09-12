@@ -11,3 +11,7 @@ vibecoded as hell
 - macOS
 - Apple Silicon (M1 or newer)
 
+
+## Swift backend development
+
+An opt-in Swift device ownership bridge is available as the first incremental migration milestone. See [the architecture, build instructions, migration plan, and validation limits](docs/swift-backend.md). The existing Java renderer remains the default.

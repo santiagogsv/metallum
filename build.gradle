@@ -64,3 +64,21 @@ publishing {
 		// retrieving dependencies.
 	}
 }
+
+// Development-only opt-in bridge. No Xcode requirement for the existing Java build.
+tasks.register('buildNative', Exec) {
+    group = 'build'
+    description = 'Build the Swift Metal device bridge for the host macOS architecture'
+    inputs.file('native/MetallumNative.swift')
+    outputs.file(layout.buildDirectory.file('native/libmetallum_native.dylib'))
+    doFirst {
+        if (!System.getProperty('os.name').toLowerCase().contains('mac')) {
+            throw new GradleException('buildNative requires macOS and the Swift toolchain')
+        }
+        file('build/native').mkdirs()
+    }
+    commandLine 'xcrun', 'swiftc', '-parse-as-library', '-emit-library', '-O',
+            '-module-cache-path', file('build/native/module-cache').absolutePath,
+            '-module-name', 'MetallumNative', 'native/MetallumNative.swift',
+            '-o', file('build/native/libmetallum_native.dylib').absolutePath
+}

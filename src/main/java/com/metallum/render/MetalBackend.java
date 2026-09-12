@@ -1,6 +1,8 @@
 package com.metallum.render;
 
 import com.metallum.Metallum;
+import com.metallum.nativebridge.NativeMetalDevice;
+import com.metallum.objc.ObjC;
 import com.metallum.mtl.CAMetalLayer;
 import com.metallum.mtl.MTLDevice;
 import com.metallum.objc.Cocoa;
@@ -17,6 +19,7 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWNativeCocoa;
 
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Path;
 
 @Environment(EnvType.CLIENT)
 public class MetalBackend implements GpuBackend {
@@ -39,39 +42,64 @@ public class MetalBackend implements GpuBackend {
     public @NonNull GpuDevice createDevice(
             final long window, final @NonNull ShaderSource defaultShaderSource, final @NonNull GpuDebugOptions debugOptions, final @NonNull Runnable criticalShaderLoader
     ) throws BackendCreationException {
-        MTLDevice metalDevice = MTLDevice.createSystemDefault();
-        if (metalDevice == null) {
-            throw new BackendCreationException("MTLCreateSystemDefaultDevice returned null", BackendCreationException.Reason.OTHER);
-        }
-
-        String deviceName = metalDevice.name();
-        if (deviceName.isBlank()) deviceName = "<unknown Metal device>";
-
-        Cocoa cocoa;
+        String nativeLibrary = System.getProperty("metallum.nativeLibrary");
+        final NativeMetalDevice nativeOwner;
         try {
-            cocoa = new Cocoa(
-                    MemorySegment.ofAddress(GLFWNativeCocoa.glfwGetCocoaWindow(window)),
-                    MemorySegment.ofAddress(GLFWNativeCocoa.glfwGetCocoaView(window))
-            );
-        } catch (IllegalStateException e) {
-            throw new BackendCreationException(e.getMessage(), BackendCreationException.Reason.GLFW_ERROR);
+            nativeOwner = nativeLibrary == null ? null : new NativeMetalDevice(Path.of(nativeLibrary));
+        } catch (RuntimeException failure) {
+            throw new BackendCreationException("Swift Metal initialization failed: " + failure.getMessage(), BackendCreationException.Reason.OTHER);
         }
-
-        CAMetalLayer metalLayer;
+        boolean transferred = false;
         try {
-            metalLayer = new CAMetalLayer(metalDevice, cocoa.backingScaleFactor());
-        } catch (IllegalStateException e) {
-            throw new BackendCreationException(e.getMessage(), BackendCreationException.Reason.OTHER);
-        }
+            MTLDevice metalDevice = nativeOwner == null ? MTLDevice.createSystemDefault() : new MTLDevice(nativeOwner.borrowedDevice());
+            if (metalDevice == null) {
+                throw new BackendCreationException("MTLCreateSystemDefaultDevice returned null", BackendCreationException.Reason.OTHER);
+            }
 
-        cocoa.setViewLayer(metalLayer.handle());
+            String deviceName = metalDevice.name();
+            if (deviceName.isBlank()) deviceName = "<unknown Metal device>";
 
-        Metallum.LOGGER.info("Metal device: {}", deviceName);
+            Cocoa cocoa;
+            try {
+                cocoa = new Cocoa(
+                        MemorySegment.ofAddress(GLFWNativeCocoa.glfwGetCocoaWindow(window)),
+                        MemorySegment.ofAddress(GLFWNativeCocoa.glfwGetCocoaView(window))
+                );
+            } catch (IllegalStateException e) {
+                throw new BackendCreationException(e.getMessage(), BackendCreationException.Reason.GLFW_ERROR);
+            }
 
-        try {
-            return new GpuDevice(new MetalDevice(defaultShaderSource, debugOptions, metalDevice.handle(), metalLayer, deviceName, cocoa), criticalShaderLoader);
-        } catch (Throwable throwable) {
-            throw new BackendCreationException("Metal device initialization failed: " + throwable.getMessage(), BackendCreationException.Reason.OTHER);
+            CAMetalLayer metalLayer;
+            try {
+                metalLayer = new CAMetalLayer(metalDevice, cocoa.backingScaleFactor());
+            } catch (IllegalStateException e) {
+                throw new BackendCreationException(e.getMessage(), BackendCreationException.Reason.OTHER);
+            }
+
+            cocoa.setViewLayer(metalLayer.handle());
+
+            Metallum.LOGGER.info("Metal device: {}", deviceName);
+
+            try {
+                MetalDevice backend = new MetalDevice(defaultShaderSource, debugOptions, metalDevice.handle(), metalLayer, deviceName, cocoa,
+                        nativeOwner == null ? () -> ObjC.release(metalDevice.handle()) : nativeOwner::close);
+                try {
+                    GpuDevice result = new GpuDevice(backend, criticalShaderLoader);
+                    transferred = true;
+                    return result;
+                } catch (Throwable failure) {
+                    try {
+                        backend.close();
+                    } catch (Throwable cleanupFailure) {
+                        failure.addSuppressed(cleanupFailure);
+                    }
+                    throw failure;
+                }
+            } catch (Throwable throwable) {
+                throw new BackendCreationException("Metal device initialization failed: " + throwable.getMessage(), BackendCreationException.Reason.OTHER);
+            }
+        } finally {
+            if (!transferred && nativeOwner != null) nativeOwner.close();
         }
     }
 }

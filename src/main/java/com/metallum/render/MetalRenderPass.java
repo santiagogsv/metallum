@@ -20,8 +20,6 @@ import org.joml.Vector4fc;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.lwjgl.PointerBuffer;
-import org.lwjgl.vulkan.VkDrawIndexedIndirectCommand;
-import org.lwjgl.vulkan.VkDrawIndirectCommand;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -248,7 +246,7 @@ final class MetalRenderPass implements RenderPassBackend {
         long indirectOffset = commands.offset();
         for (int i = 0; i < drawCount; i++) {
             enc.drawIndexedPrimitivesIndirect(primitiveType, indexType, indexBufferHandle, indirectBuffer, indirectOffset);
-            indirectOffset += VkDrawIndexedIndirectCommand.SIZEOF;
+            indirectOffset += MetalIndirectArguments.INDEXED_SIZE;
         }
     }
 
@@ -320,7 +318,7 @@ final class MetalRenderPass implements RenderPassBackend {
         long indirectOffset = commands.offset();
         for (int i = 0; i < drawCount; i++) {
             enc.drawPrimitivesIndirect(primitiveType, indirectBuffer, indirectOffset);
-            indirectOffset += VkDrawIndirectCommand.SIZEOF;
+            indirectOffset += MetalIndirectArguments.SIZE;
         }
     }
 

@@ -35,6 +35,7 @@ final class MetalDevice implements GpuDeviceBackend {
     private static final Pattern LINE_COMMENTS = Pattern.compile("(?m)//[^\\n]*");
     private final MemorySegment metalDeviceHandle;
     private final MTLDevice metalDevice;
+    private final Runnable releaseDevice;
     private final CAMetalLayer metalLayer;
     private final Cocoa cocoa;
     private final GpuDebugOptions debugOptions;
@@ -53,8 +54,10 @@ final class MetalDevice implements GpuDeviceBackend {
             final MemorySegment metalDeviceHandle,
             final CAMetalLayer metalLayer,
             final String deviceName,
-            final Cocoa cocoa
+            final Cocoa cocoa,
+            final Runnable releaseDevice
     ) {
+        this.releaseDevice = releaseDevice;
         this.defaultShaderSource = defaultShaderSource;
         this.debugOptions = debugOptions;
         this.metalDeviceHandle = metalDeviceHandle;
@@ -192,7 +195,7 @@ final class MetalDevice implements GpuDeviceBackend {
             ObjC.release(state);
         }
         depthStencilStates.clear();
-        ObjC.release(this.metalDeviceHandle);
+        this.releaseDevice.run();
     }
 
     @Override
