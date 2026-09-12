@@ -2,7 +2,7 @@ package com.metallum.render;
 
 import com.metallum.Metallum;
 import com.metallum.nativebridge.NativeMetalDevice;
-import com.metallum.objc.ObjC;
+import com.metallum.nativebridge.NativeLibrary;
 import com.metallum.mtl.CAMetalLayer;
 import com.metallum.mtl.MTLDevice;
 import com.metallum.objc.Cocoa;
@@ -19,7 +19,6 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWNativeCocoa;
 
 import java.lang.foreign.MemorySegment;
-import java.nio.file.Path;
 
 @Environment(EnvType.CLIENT)
 public class MetalBackend implements GpuBackend {
@@ -42,16 +41,15 @@ public class MetalBackend implements GpuBackend {
     public @NonNull GpuDevice createDevice(
             final long window, final @NonNull ShaderSource defaultShaderSource, final @NonNull GpuDebugOptions debugOptions, final @NonNull Runnable criticalShaderLoader
     ) throws BackendCreationException {
-        String nativeLibrary = System.getProperty("metallum.nativeLibrary");
         final NativeMetalDevice nativeOwner;
         try {
-            nativeOwner = nativeLibrary == null ? null : new NativeMetalDevice(Path.of(nativeLibrary));
+            nativeOwner = new NativeMetalDevice(NativeLibrary.resolve());
         } catch (RuntimeException failure) {
             throw new BackendCreationException("Swift Metal initialization failed: " + failure.getMessage(), BackendCreationException.Reason.OTHER);
         }
         boolean transferred = false;
         try {
-            MTLDevice metalDevice = nativeOwner == null ? MTLDevice.createSystemDefault() : new MTLDevice(nativeOwner.borrowedDevice());
+            MTLDevice metalDevice = new MTLDevice(nativeOwner.borrowedDevice(), nativeOwner);
             if (metalDevice == null) {
                 throw new BackendCreationException("MTLCreateSystemDefaultDevice returned null", BackendCreationException.Reason.OTHER);
             }
@@ -78,11 +76,11 @@ public class MetalBackend implements GpuBackend {
 
             cocoa.setViewLayer(metalLayer.handle());
 
-            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, nativeOwner == null ? "Java" : "Swift resources + render pipelines, ABI 5");
+            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, "Swift resources + render pipelines, ABI 6");
 
             try {
                 MetalDevice backend = new MetalDevice(defaultShaderSource, debugOptions, metalDevice.handle(), metalLayer, deviceName, cocoa,
-                        nativeOwner == null ? () -> ObjC.release(metalDevice.handle()) : nativeOwner::close, nativeOwner);
+                        nativeOwner::close, nativeOwner);
                 try {
                     GpuDevice result = new GpuDevice(backend, criticalShaderLoader);
                     transferred = true;
@@ -99,7 +97,7 @@ public class MetalBackend implements GpuBackend {
                 throw new BackendCreationException("Metal device initialization failed: " + throwable.getMessage(), BackendCreationException.Reason.OTHER);
             }
         } finally {
-            if (!transferred && nativeOwner != null) nativeOwner.close();
+            if (!transferred) nativeOwner.close();
         }
     }
 }

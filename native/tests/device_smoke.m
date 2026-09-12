@@ -8,7 +8,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 5);
+        assert(metallum_abi_version() == 6);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -103,6 +103,22 @@ int main(void) {
             assert(state && state.device == device);
             state = nil;
             metallum_resource_destroy(context, pipeline);
+            uint64_t depth = metallum_depth_state_create(context, MTLCompareFunctionLessEqual, 1);
+            assert(depth && metallum_resource_borrow_mtl(context, depth));
+            assert(metallum_depth_state_create(context, 8, 0) == 0);
+            uint64_t present_sampler = metallum_present_sampler_create(context, 1);
+            assert(present_sampler && metallum_resource_borrow_mtl(context, present_sampler));
+            uint64_t texel_buffer = metallum_buffer_create(context, 1024, 1);
+            uint64_t texel = metallum_buffer_texture_create(context, texel_buffer, MTLPixelFormatRGBA8Unorm, 0, 16, 64);
+            assert(texel);
+            assert(metallum_buffer_texture_create(context, texel_buffer, MTLPixelFormatRGBA8Unorm, 1020, 16, 64) == 0);
+            metallum_buffer_destroy(context, texel_buffer);
+            id<MTLTexture> texel_view = (__bridge id<MTLTexture>)metallum_resource_borrow_mtl(context, texel);
+            assert(texel_view.textureType == MTLTextureTypeTextureBuffer && texel_view.width == 16);
+            texel_view = nil;
+            metallum_resource_destroy(context, texel);
+            metallum_resource_destroy(context, depth);
+            metallum_resource_destroy(context, present_sampler);
             // Device teardown owns this sampler as well as the private buffer.
             // Leave the private buffer alive to exercise device-owned cleanup.
             if (i == 0) printf("Native device: %s\n", device.name.UTF8String);

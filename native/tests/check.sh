@@ -4,3 +4,4 @@ set -eu
 cd "$(dirname "$0")/../.."
 sh native/tests/descriptors.sh
 sh native/tests/ffi_contract.sh
+sh native/tests/packaged.sh

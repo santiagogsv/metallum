@@ -72,6 +72,17 @@ struct ResourceDescriptorSmoke {
             do { _ = try PipelineDescriptors.make(invalid); fatalError("Invalid pipeline accepted") }
             catch { }
         }
+        for compare in UInt64(0)...7 {
+            let depth = ResourceDescriptors.depth(compare: compare, write: 1)!
+            precondition(depth.depthCompareFunction.rawValue == compare && depth.isDepthWriteEnabled)
+        }
+        precondition(ResourceDescriptors.depth(compare: 8, write: 0) == nil)
+        precondition(ResourceDescriptors.depth(compare: 0, write: 2) == nil)
+        for linear in [false, true] {
+            let sampler = ResourceDescriptors.presentSampler(linear: linear)
+            precondition(sampler.minFilter == (linear ? .linear : .nearest) && sampler.magFilter == sampler.minFilter)
+            precondition(sampler.mipFilter == .notMipmapped && sampler.sAddressMode == .clampToEdge && sampler.tAddressMode == .clampToEdge)
+        }
         print("Swift Metal descriptor compatibility tests passed (no GPU required)")
     }
 }

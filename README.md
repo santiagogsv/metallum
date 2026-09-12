@@ -12,8 +12,10 @@ vibecoded as hell
 - Apple Silicon (M1 or newer)
 
 
-## Swift backend development
+## Swift backend
 
-An opt-in Swift device ownership bridge is available as the first incremental migration milestone. See [the architecture, build instructions, migration plan, and validation limits](docs/swift-backend.md). The existing Java renderer remains the default.
+The current build is `0.0.24-swift.6`. Swift owns resource creation, shader compilation and render pipelines. The matching native library is bundled in the jar and loaded automatically. No `metallum.nativeLibrary` JVM argument is needed; that property remains a development override only. The Java fallback has been removed.
 
-The current migration build is `0.0.24-swift.5`: Swift 6.4, macOS 27, MSL 4.1, Swift resource ownership, native shader compilation/library caching, and Swift render-pipeline ownership. See [milestone 5](docs/swift-pipelines.md) for scope, upgrade and test instructions. Run `./gradlew build checkNative` to build and run GPU-independent native checks.
+See [installation, cleanup scope and validation](docs/swift-packaging.md). Run `./gradlew build checkNative` with JDK 25 and the Swift 6.4/macOS 27 SDK toolchain to build the jar and run GPU-independent checks.
+
+Java still adapts Minecraft/Blaze3D and controls command encoding and presentation during the incremental migration. See [the original architecture and migration plan](docs/swift-backend.md) for background.

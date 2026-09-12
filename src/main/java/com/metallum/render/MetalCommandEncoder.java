@@ -570,7 +570,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             commandBuffer = null;
         }
         transientMemory.close();
-        device.queueResourceRelease(fence.handle());
+        device.queueNativeRelease(() -> ObjC.release(fence.handle()));
         destroyQueue.close();
         for (ArrayDeque<MTLBuffer> bucket : dynamicBackingPool.values()) {
             for (MTLBuffer buffer : bucket) {

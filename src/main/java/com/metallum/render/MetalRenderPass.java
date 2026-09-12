@@ -648,19 +648,10 @@ final class MetalRenderPass implements RenderPassBackend {
             throw new IllegalStateException("Texel buffer " + binding.name() + " length " + texelByteLength + " is not a valid " + texelFormat + " range");
         }
         long texelCount = texelByteLength / pixelSize;
-        MemorySegment texelTexture = MTLTexture.newBufferTextureView(
-                texelBuffer.nativeHandle(),
-                pixelFormat,
-                texelSlice.offset(),
-                texelCount,
-                texelByteLength
-        );
-        if (ObjC.isNil(texelTexture)) {
-            throw new IllegalStateException("Failed to create Metal texel buffer texture for " + binding.name());
-        }
-
-        bindTexture(enc, texelTexture, binding.bindingIndex(), binding.stageMask());
-        commandEncoder.queueForDestroy(() -> ObjC.release(texelTexture));
+        var texture = texelBuffer.metalBuffer().nativeOwner().createTexture(pixelFormat, texelSlice.offset(), texelCount, texelByteLength);
+        // Retire after submitted work, including when binding fails.
+        commandEncoder.queueForDestroy(texture::close);
+        bindTexture(enc, texture.borrowedHandle(), binding.bindingIndex(), binding.stageMask());
     }
 
     record TextureViewAndSampler(GpuTextureView textureView, GpuSampler sampler) {

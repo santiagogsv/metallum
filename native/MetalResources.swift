@@ -1,7 +1,7 @@
 import Foundation
 import Metal
 
-// This table owns textures, texture views and samplers. Buffer IDs remain in their own table.
+// This table owns non-buffer Metal resources. Buffer IDs remain in their own table.
 extension DeviceContext {
     func storeResource(_ resource: AnyObject) -> UInt64 {
         guard nextResourceID < UInt64.max else { return 0 }
@@ -113,6 +113,61 @@ enum ResourceDescriptors {
         descriptor.lodMinClamp = 0
         let clampedLod = maxLod.isNaN ? Double.nan : max(0.25, maxLod)
         descriptor.lodMaxClamp = clampedLod.isFinite ? Float(min(clampedLod, Double(Float.greatestFiniteMagnitude))) : Float.greatestFiniteMagnitude
+        return descriptor
+    }
+}
+
+@c(metallum_depth_state_create)
+public func metallumDepthStateCreate(_ handle: UnsafeMutableRawPointer?, _ compare: UInt64, _ write: UInt32) -> UInt64 {
+    guard let handle, let descriptor = ResourceDescriptors.depth(compare: compare, write: write) else { return 0 }
+    let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+    guard let state = context.device.makeDepthStencilState(descriptor: descriptor) else { return 0 }
+    return context.storeResource(state as AnyObject)
+}
+
+@c(metallum_present_sampler_create)
+public func metallumPresentSamplerCreate(_ handle: UnsafeMutableRawPointer?, _ linear: UInt32) -> UInt64 {
+    guard let handle, linear <= 1 else { return 0 }
+    let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+    guard let state = context.device.makeSamplerState(descriptor: ResourceDescriptors.presentSampler(linear: linear == 1)) else { return 0 }
+    return context.storeResource(state as AnyObject)
+}
+
+@c(metallum_buffer_texture_create)
+public func metallumBufferTextureCreate(_ handle: UnsafeMutableRawPointer?, _ bufferID: UInt64, _ pixelFormat: UInt64,
+                                       _ offset: UInt64, _ width: UInt64, _ byteLength: UInt64) -> UInt64 {
+    guard let handle, let format = MTLPixelFormat(rawValue: UInt(pixelFormat)), format != .invalid,
+          width > 0, width <= UInt64(Int.max), byteLength > 0, byteLength <= UInt64(Int.max) else { return 0 }
+    let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+    guard let buffer = context.buffers[bufferID], offset <= UInt64(buffer.length),
+          byteLength <= UInt64(buffer.length) - offset else { return 0 }
+    let alignment = context.device.minimumTextureBufferAlignment(for: format)
+    guard alignment > 0, offset % UInt64(alignment) == 0 else { return 0 }
+    let remainder = byteLength % UInt64(alignment)
+    let padding = remainder == 0 ? 0 : UInt64(alignment) - remainder
+    guard byteLength <= UInt64(Int.max) - padding else { return 0 }
+    let descriptor = MTLTextureDescriptor.textureBufferDescriptor(with: format, width: Int(width), resourceOptions: [], usage: .shaderRead)
+    descriptor.storageMode = buffer.storageMode
+    descriptor.hazardTrackingMode = .untracked
+    guard let texture = buffer.makeTexture(descriptor: descriptor, offset: Int(offset), bytesPerRow: Int(byteLength + padding)) else { return 0 }
+    return context.storeResource(texture as AnyObject)
+}
+
+extension ResourceDescriptors {
+    static func depth(compare: UInt64, write: UInt32) -> MTLDepthStencilDescriptor? {
+        guard compare <= 7, write <= 1, let function = MTLCompareFunction(rawValue: UInt(compare)) else { return nil }
+        let descriptor = MTLDepthStencilDescriptor()
+        descriptor.depthCompareFunction = function
+        descriptor.isDepthWriteEnabled = write == 1
+        return descriptor
+    }
+    static func presentSampler(linear: Bool) -> MTLSamplerDescriptor {
+        let descriptor = MTLSamplerDescriptor()
+        descriptor.minFilter = linear ? .linear : .nearest
+        descriptor.magFilter = linear ? .linear : .nearest
+        descriptor.mipFilter = .notMipmapped
+        descriptor.sAddressMode = .clampToEdge
+        descriptor.tAddressMode = .clampToEdge
         return descriptor
     }
 }

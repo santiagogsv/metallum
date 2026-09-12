@@ -65,7 +65,7 @@ publishing {
 	}
 }
 
-// Development-only opt-in bridge. No Xcode requirement for the existing Java build.
+// Required Swift backend; build and package the matching library together.
 tasks.register('buildNative', Exec) {
     group = 'build'
     description = 'Build the Swift Metal device bridge for the host macOS architecture'
@@ -82,6 +82,7 @@ tasks.register('buildNative', Exec) {
     commandLine 'xcrun', 'swiftc', '-parse-as-library', '-emit-library', '-O',
             '-swift-version', '6', '-target', 'arm64-apple-macosx27.0',
             '-module-cache-path', file('build/native/module-cache').absolutePath,
+            '-Xlinker', '-install_name', '-Xlinker', '@rpath/libmetallum_native.dylib',
             '-module-name', 'MetallumNative', 'native/MetallumNative.swift', 'native/MetalResources.swift', 'native/MetalShaders.swift', 'native/MetalPipelines.swift',
             '-o', file('build/native/libmetallum_native.dylib').absolutePath
 }
@@ -89,7 +90,16 @@ tasks.register('buildNative', Exec) {
 tasks.register('checkNative', Exec) {
     group = 'verification'
     description = 'Verify Swift Metal descriptor policy and Java/C ownership without a GPU'
-    dependsOn 'buildNative'
+    dependsOn 'buildNative', 'jar'
+    environment 'METALLUM_TEST_JAR', tasks.named('jar').get().archiveFile.get().asFile.absolutePath
     environment 'JAVA_HOME', System.getProperty('java.home')
     commandLine 'sh', 'native/tests/check.sh'
+}
+
+// Ship exactly the native library built with this jar. Also available to development launches.
+tasks.named('processResources') {
+    dependsOn tasks.named('buildNative')
+    from(layout.buildDirectory.file('native/libmetallum_native.dylib')) {
+        into 'native/macos-arm64'
+    }
 }

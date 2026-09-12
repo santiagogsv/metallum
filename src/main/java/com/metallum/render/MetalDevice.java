@@ -3,7 +3,6 @@ package com.metallum.render;
 import com.metallum.mtl.*;
 import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.objc.Cocoa;
-import com.metallum.objc.ObjC;
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.pipeline.CompiledRenderPipeline;
@@ -47,7 +46,7 @@ final class MetalDevice implements GpuDeviceBackend {
     private final Map<RenderPipeline, MetalCompiledRenderPipeline> compiledPipelines = new IdentityHashMap<>();
     private final Map<ShaderCompilationKey, IntermediaryShaderModule> shaderCache = new HashMap<>();
     private final Map<MslFunctionKey, MTLFunction> functionCache = new HashMap<>();
-    private final Map<Long, MemorySegment> depthStencilStates = new HashMap<>();
+    private final Map<Long, NativeMetalDevice.Resource> depthStencilStates = new HashMap<>();
     private final ShaderSource defaultShaderSource;
 
     MetalDevice(
@@ -178,7 +177,7 @@ final class MetalDevice implements GpuDeviceBackend {
         this.shaderCache.clear();
         this.functionCache.values().forEach(MTLFunction::close);
         this.functionCache.clear();
-        if (this.nativeOwner != null) this.nativeOwner.clearShaderLibraries();
+        this.nativeOwner.clearShaderLibraries();
     }
 
     @Override
@@ -192,8 +191,8 @@ final class MetalDevice implements GpuDeviceBackend {
         }
         MTLBuiltinPipelines.close();
         this.commandQueue.close();
-        for (MemorySegment state : depthStencilStates.values()) {
-            ObjC.release(state);
+        for (var state : depthStencilStates.values()) {
+            state.close();
         }
         depthStencilStates.clear();
         this.releaseDevice.run();
@@ -224,17 +223,8 @@ final class MetalDevice implements GpuDeviceBackend {
 
     MemorySegment depthStencilState(final MTLCompareFunction compareFunction, final boolean writeDepth) {
         long key = (compareFunction.value << 1) | (writeDepth ? 1L : 0L);
-        MemorySegment cached = depthStencilStates.get(key);
-        if (cached != null) {
-            return cached;
-        }
-        try (MTLDepthStencilDescriptor descriptor = MTLDepthStencilDescriptor.create()) {
-            descriptor.depthCompareFunction(compareFunction);
-            descriptor.depthWriteEnabled(writeDepth);
-            MemorySegment state = metalDevice.newDepthStencilState(descriptor);
-            depthStencilStates.put(key, state);
-            return state;
-        }
+        return depthStencilStates.computeIfAbsent(key,
+                ignored -> nativeOwner.createDepthState(compareFunction.value, writeDepth)).borrowedHandle();
     }
 
     void waitForSubmittedGpuWork() {
@@ -248,17 +238,11 @@ final class MetalDevice implements GpuDeviceBackend {
     }
 
     MTLBuffer allocateBuffer(long size, boolean cpuAccessible) {
-        if (nativeOwner != null) return new MTLBuffer(nativeOwner.createBuffer(size, cpuAccessible));
-        return metalDevice.newBuffer(size, MTLResourceOptions.of(
-                cpuAccessible ? MTLStorageMode.Shared : MTLStorageMode.Private, MTLHazardTrackingMode.Untracked));
+        return new MTLBuffer(nativeOwner.createBuffer(size, cpuAccessible));
     }
 
     void queueBufferRelease(MTLBuffer buffer) {
         this.commandEncoder.queueForDestroy(buffer::close);
-    }
-
-    void queueResourceRelease(final MemorySegment handle) {
-        this.commandEncoder.queueForDestroy(() -> ObjC.release(handle));
     }
 
     MetalCompiledRenderPipeline getOrCompilePipeline(final RenderPipeline pipeline) {

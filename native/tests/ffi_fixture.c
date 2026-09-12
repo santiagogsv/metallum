@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 5
+#define TEST_ABI_VERSION 6
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -117,4 +117,21 @@ uint64_t metallum_pipeline_create(void *context, uint64_t vertex, uint64_t fragm
     Resource *r = calloc(1, sizeof(Resource));
     assert(r); r->kind = 4;
     return store_resource(c, r);
+}
+
+uint64_t metallum_depth_state_create(void *context, uint64_t compare, uint32_t write) {
+    if (!context || compare > 7 || write > 1) return 0;
+    Resource *r = calloc(1, sizeof(Resource)); assert(r); r->kind = 5;
+    return store_resource(context, r);
+}
+uint64_t metallum_present_sampler_create(void *context, uint32_t linear) {
+    if (linear > 1) return 0;
+    return metallum_sampler_create(context, 0, 0, linear, linear, 1, 0);
+}
+uint64_t metallum_buffer_texture_create(void *context, uint64_t buffer, uint64_t format,
+                                       uint64_t offset, uint64_t width, uint64_t length) {
+    Context *c = context;
+    if (!c || buffer >= 256 || !c->buffers[buffer].data || !format || !width || !length) return 0;
+    Resource *r = calloc(1, sizeof(Resource)); assert(r); r->kind = 1; r->mips = 1;
+    return store_resource(context, r);
 }

@@ -1,8 +1,6 @@
 package com.metallum.render;
 
-import com.metallum.mtl.MTLTexture;
 import com.metallum.nativebridge.NativeMetalDevice;
-import com.metallum.objc.ObjC;
 import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.fabricmc.api.EnvType;
@@ -29,24 +27,8 @@ final class MetalGpuTextureView extends GpuTextureView {
         if (this.closed) throw new IllegalStateException("Texture view is closed");
         if (this.nativeHandle == null) {
             MetalGpuTexture texture = (MetalGpuTexture) this.texture();
-            if (texture.nativeOwner() != null) {
-                this.nativeOwner = texture.nativeOwner().createView(this.baseMipLevel(), this.mipLevels());
-                this.nativeHandle = this.nativeOwner.borrowedHandle();
-            } else if (this.baseMipLevel() == 0 && this.mipLevels() >= texture.getMipLevels()) {
-                this.nativeHandle = ObjC.retain(texture.nativeHandle());
-            } else {
-                MemorySegment viewHandle = MTLTexture.newTextureView(
-                        texture.nativeHandle(),
-                        this.baseMipLevel(),
-                        this.mipLevels()
-                );
-                if (ObjC.isNil(viewHandle)) {
-                    throw new IllegalStateException(
-                            "Failed to create Metal texture view for mip range " + this.baseMipLevel() + "+" + this.mipLevels()
-                    );
-                }
-                this.nativeHandle = viewHandle;
-            }
+            this.nativeOwner = texture.nativeOwner().createView(this.baseMipLevel(), this.mipLevels());
+            this.nativeHandle = this.nativeOwner.borrowedHandle();
         }
         return this.nativeHandle;
     }
@@ -56,11 +38,9 @@ final class MetalGpuTextureView extends GpuTextureView {
         if (this.closed) {
             return;
         }
-        MemorySegment handle = this.nativeHandle;
         this.closed = true;
         MetalGpuTexture texture = (MetalGpuTexture) this.texture();
         if (this.nativeOwner != null) texture.queueNativeRelease(this.nativeOwner::close);
-        else if (handle != null) texture.queueNativeRelease(() -> ObjC.release(handle));
         this.nativeOwner = null;
         this.nativeHandle = null;
         texture.removeView();

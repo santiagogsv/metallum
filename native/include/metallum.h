@@ -55,6 +55,13 @@ void metallum_shader_libraries_clear(void *context);
  * Diagnostic rules match function_create. Calls are synchronous and render-thread confined. */
 uint64_t metallum_pipeline_create(void *context, uint64_t vertex, uint64_t fragment,
                                   const uint64_t *words, uint32_t count, char *error_output, uint32_t error_capacity);
+/* ABI 6: independently owned resource IDs; destroy with metallum_resource_destroy. */
+uint64_t metallum_depth_state_create(void *context, uint64_t compare, uint32_t write);
+uint64_t metallum_present_sampler_create(void *context, uint32_t linear);
+/* buffer_id is in the buffer namespace; result is in the resource namespace. */
+uint64_t metallum_buffer_texture_create(void *context, uint64_t buffer_id, uint64_t format,
+                                      uint64_t offset, uint64_t width, uint64_t byte_length);
+
 #ifdef __cplusplus
 }
 #endif

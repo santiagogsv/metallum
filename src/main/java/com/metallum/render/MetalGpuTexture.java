@@ -2,8 +2,6 @@ package com.metallum.render;
 
 import com.metallum.mtl.*;
 import com.metallum.nativebridge.NativeMetalDevice;
-import com.metallum.objc.Msg;
-import com.metallum.objc.ObjC;
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.textures.GpuTexture;
 import net.fabricmc.api.EnvType;
@@ -15,7 +13,6 @@ import java.lang.foreign.MemorySegment;
 
 @Environment(EnvType.CLIENT)
 final class MetalGpuTexture extends GpuTexture {
-    private static final Msg SET_LABEL = Msg.ofVoid("setLabel:", java.lang.foreign.ValueLayout.ADDRESS);
 
     private final MetalDevice device;
     private final NativeMetalDevice.Resource nativeOwner;
@@ -43,41 +40,10 @@ final class MetalGpuTexture extends GpuTexture {
         this.device = device;
         this.mtlPixelFormat = MTLPixelFormat.from(format);
 
-        if (device.nativeOwner() != null) {
-            this.nativeOwner = device.nativeOwner().createTexture(this.mtlPixelFormat.value, width, height, depthOrLayers,
-                    Math.max(mipLevels, 1), (usage & GpuTexture.USAGE_CUBEMAP_COMPATIBLE) != 0,
-                    (usage & GpuTexture.USAGE_RENDER_ATTACHMENT) != 0, label);
-            this.nativeHandle = this.nativeOwner.borrowedHandle();
-        } else {
-            this.nativeOwner = null;
-            try (MTLTextureDescriptor descriptor = MTLTextureDescriptor.create()) {
-                descriptor.pixelFormat(this.mtlPixelFormat);
-                descriptor.width(width);
-                descriptor.height(height);
-                if ((usage & GpuTexture.USAGE_CUBEMAP_COMPATIBLE) != 0) {
-                    if (depthOrLayers > 6) {
-                        descriptor.textureType(MTLTextureType.TypeCubeArray);
-                        descriptor.arrayLength(depthOrLayers / 6);
-                    } else {
-                        descriptor.textureType(MTLTextureType.TypeCube);
-                        descriptor.arrayLength(1);
-                    }
-                } else if (depthOrLayers > 1) {
-                    descriptor.textureType(MTLTextureType.Type2DArray);
-                    descriptor.arrayLength(depthOrLayers);
-                }
-                descriptor.mipmapLevelCount(Math.max(mipLevels, 1));
-                descriptor.usage(toMtlTextureUsage(usage));
-                descriptor.storageMode(MTLStorageMode.Private);
-                descriptor.hazardTrackingMode(MTLHazardTrackingMode.Untracked);
-                this.nativeHandle = device.metalDevice().newTexture(descriptor);
-            }
-            if (label != null) {
-                MemorySegment nsLabel = ObjC.nsString(label);
-                SET_LABEL.send(this.nativeHandle, nsLabel);
-                ObjC.release(nsLabel);
-            }
-        }
+        this.nativeOwner = device.nativeOwner().createTexture(this.mtlPixelFormat.value, width, height, depthOrLayers,
+                Math.max(mipLevels, 1), (usage & GpuTexture.USAGE_CUBEMAP_COMPATIBLE) != 0,
+                (usage & GpuTexture.USAGE_RENDER_ATTACHMENT) != 0, label);
+        this.nativeHandle = this.nativeOwner.borrowedHandle();
     }
 
     int pixelSize() {
@@ -125,10 +91,8 @@ final class MetalGpuTexture extends GpuTexture {
             throw new IllegalStateException("Too many views removed from texture");
         }
         if (this.closed && this.views == 0 && this.nativeHandle != null) {
-            MemorySegment handle = this.nativeHandle;
             this.nativeHandle = null;
-            if (this.nativeOwner != null) this.device.queueNativeRelease(this.nativeOwner::close);
-            else this.device.queueResourceRelease(handle);
+            this.device.queueNativeRelease(this.nativeOwner::close);
         }
     }
 
@@ -154,15 +118,4 @@ final class MetalGpuTexture extends GpuTexture {
         return this.closed;
     }
 
-    private static long toMtlTextureUsage(@GpuTexture.Usage final int usage) {
-        long result = 0L;
-        if ((usage & GpuTexture.USAGE_TEXTURE_BINDING) != 0 || (usage & GpuTexture.USAGE_COPY_DST) != 0 || (usage & GpuTexture.USAGE_COPY_SRC) != 0) {
-            result |= MTLTextureUsage.ShaderRead.value;
-        }
-        if ((usage & GpuTexture.USAGE_RENDER_ATTACHMENT) != 0) {
-            result |= MTLTextureUsage.RenderTarget.value;
-            result |= MTLTextureUsage.ShaderRead.value;
-        }
-        return result == 0L ? MTLTextureUsage.ShaderRead.value : result;
-    }
 }

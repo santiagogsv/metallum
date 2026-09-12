@@ -95,7 +95,7 @@ public final class MTLBuiltinPipelines {
             """;
 
     private static MTLDevice device;
-    private static final Map<Long, ArrayDeque<NativeMetalDevice.Resource>> nativePipelines = new HashMap<>();
+    private static final Map<Long, ArrayDeque<NativeMetalDevice.Resource>> nativeResources = new HashMap<>();
     private static MemorySegment presentPipeline = MemorySegment.NULL;
     private static MemorySegment presentLinearSampler = MemorySegment.NULL;
     private static MemorySegment presentNearestSampler = MemorySegment.NULL;
@@ -118,20 +118,20 @@ public final class MTLBuiltinPipelines {
 
     public static void close() {
         if (!ObjC.isNil(presentPipeline)) {
-            releasePipeline(presentPipeline);
+            releaseResource(presentPipeline);
             presentPipeline = MemorySegment.NULL;
         }
         if (!ObjC.isNil(presentLinearSampler)) {
-            ObjC.release(presentLinearSampler);
+            releaseResource(presentLinearSampler);
             presentLinearSampler = MemorySegment.NULL;
         }
         if (!ObjC.isNil(presentNearestSampler)) {
-            ObjC.release(presentNearestSampler);
+            releaseResource(presentNearestSampler);
             presentNearestSampler = MemorySegment.NULL;
         }
-        clearPipelines.values().forEach(MTLBuiltinPipelines::releasePipeline);
+        clearPipelines.values().forEach(MTLBuiltinPipelines::releaseResource);
         clearPipelines.clear();
-        depthStencilStates.values().forEach(ObjC::release);
+        depthStencilStates.values().forEach(MTLBuiltinPipelines::releaseResource);
         depthStencilStates.clear();
         device = null;
     }
@@ -363,15 +363,9 @@ public final class MTLBuiltinPipelines {
         if (cached != null) {
             return cached;
         }
-        try (MTLDepthStencilDescriptor descriptor = MTLDepthStencilDescriptor.create()) {
-            descriptor.depthCompareFunction(compareOp);
-            descriptor.depthWriteEnabled(writeDepth);
-            MemorySegment state = device.newDepthStencilState(descriptor);
-            if (!ObjC.isNil(state)) {
-                depthStencilStates.put(key, state);
-            }
-            return state;
-        }
+        MemorySegment state = own(device.nativeOwner().createDepthState(compareOp.value, writeDepth));
+        depthStencilStates.put(key, state);
+        return state;
     }
 
     private static MemorySegment buildPipeline(
@@ -385,40 +379,26 @@ public final class MTLBuiltinPipelines {
         try (MTLFunction vertex = device.newFunction(mslSource, vertexEntry);
              MTLFunction fragment = device.newFunction(mslSource, fragmentEntry)) {
             if (ObjC.isNil(vertex.handle()) || ObjC.isNil(fragment.handle())) return MemorySegment.NULL;
-            if (device.nativeOwner() != null) {
-                var state = device.nativeOwner().createPipeline(vertex.nativeResource(), fragment.nativeResource(),
-                        new NativePipelineDescriptor(colorFormat, depthFormat, MTLPixelFormat.Invalid.value, writeMask));
-                MemorySegment handle = state.borrowedHandle();
-                // Metal may share an identical state object; retain each independent resource ID.
-                nativePipelines.computeIfAbsent(handle.address(), ignored -> new ArrayDeque<>()).addLast(state);
-                return handle;
-            }
-            try (MTLRenderPipelineDescriptor descriptor = new MTLRenderPipelineDescriptor()) {
-                descriptor.setCompiledFunctions(vertex.handle(), fragment.handle());
-                descriptor.setColorAttachmentFormat(0, colorFormat);
-                descriptor.setDepthStencilFormats(depthFormat, MTLPixelFormat.Invalid.value);
-                descriptor.disableBlending(0, writeMask);
-                return device.newRenderPipelineState(descriptor);
-            }
+            return own(device.nativeOwner().createPipeline(vertex.nativeResource(), fragment.nativeResource(),
+                    new NativePipelineDescriptor(colorFormat, depthFormat, MTLPixelFormat.Invalid.value, writeMask)));
         }
     }
 
-    private static void releasePipeline(MemorySegment handle) {
-        var owners = nativePipelines.get(handle.address());
-        if (owners == null) { ObjC.release(handle); return; }
+    private static MemorySegment own(NativeMetalDevice.Resource resource) {
+        MemorySegment handle = resource.borrowedHandle();
+        nativeResources.computeIfAbsent(handle.address(), ignored -> new ArrayDeque<>()).addLast(resource);
+        return handle;
+    }
+
+    private static void releaseResource(MemorySegment handle) {
+        var owners = nativeResources.get(handle.address());
+        if (owners == null) throw new IllegalStateException("Unknown built-in Metal resource");
         owners.removeFirst().close();
-        if (owners.isEmpty()) nativePipelines.remove(handle.address());
+        if (owners.isEmpty()) nativeResources.remove(handle.address());
     }
 
     private static MemorySegment buildPresentSampler(final MTLSamplerMinMagFilter filter) {
-        try (MTLSamplerDescriptor descriptor = MTLSamplerDescriptor.create()) {
-            descriptor.minFilter(filter);
-            descriptor.magFilter(filter);
-            descriptor.mipFilter(MTLSamplerMipFilter.NotMipmapped);
-            descriptor.sAddressMode(MTLSamplerAddressMode.ClampToEdge);
-            descriptor.tAddressMode(MTLSamplerAddressMode.ClampToEdge);
-            return device.newSamplerState(descriptor);
-        }
+        return own(device.nativeOwner().createPresentSampler(filter == MTLSamplerMinMagFilter.Linear));
     }
 
 }

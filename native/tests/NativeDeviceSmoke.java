@@ -63,6 +63,20 @@ public final class NativeDeviceSmoke {
                 catch (IllegalArgumentException expected) { }
                 try { device.createSampler(false, false, false, false, 17, 0); throw new AssertionError("Invalid anisotropy accepted"); }
                 catch (IllegalArgumentException expected) { }
+                try (var depth = device.createDepthState(3, true); var sampler = device.createPresentSampler(true)) {
+                    if (depth.borrowedHandle().address() == 0 || sampler.borrowedHandle().address() == 0) throw new AssertionError("Missing state");
+                }
+                try { device.createDepthState(8, false); throw new AssertionError("Invalid depth function accepted"); }
+                catch (IllegalStateException expected) { }
+                var texelBuffer = device.createBuffer(1024, true);
+                try (var texel = texelBuffer.createTexture(70, 0, 16, 64)) {
+                    try { texelBuffer.createTexture(70, 1020, 16, 64); throw new AssertionError("Invalid texel range accepted"); }
+                    catch (IllegalArgumentException expected) { }
+                    texelBuffer.close();
+                    if (texel.borrowedHandle().address() == 0) throw new AssertionError("Texel view lost");
+                    try { texelBuffer.createTexture(70, 0, 16, 64); throw new AssertionError("Closed buffer accepted"); }
+                    catch (IllegalStateException expected) { }
+                }
                 NativeMetalDevice.Buffer shared = device.createBuffer(64, true);
                 try (shared; var gpuOnly = device.createBuffer(64, false)) {
                     if (shared.length() != 64 || shared.borrowedBuffer().address() == 0) throw new AssertionError("Invalid shared buffer");
@@ -113,7 +127,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 5")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 6")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

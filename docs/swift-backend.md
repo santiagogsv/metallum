@@ -1,6 +1,6 @@
 # Incremental Swift backend
 
-This page records the original architecture and milestone 1. The current migration is [milestone 5](swift-pipelines.md). See [milestone 2](swift-buffers.md) for the current macOS 27 target, supported `@c` exports, ABI 2, buffer ownership, and MSL 4.1 changes.
+This page records the original architecture and milestone 1. The current migration is [milestone 6](swift-packaging.md), which bundles the native library and removes the Java fallback. The opt-in instructions below are historical. See [milestone 2](swift-buffers.md) for the current macOS 27 target, supported `@c` exports, ABI 2, buffer ownership, and MSL 4.1 changes.
 
 ## Current architecture
 
