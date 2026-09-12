@@ -1,5 +1,6 @@
 package com.metallum.mtl;
 
+import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.objc.Msg;
 import com.metallum.objc.ObjC;
 import net.fabricmc.api.EnvType;
@@ -41,7 +42,7 @@ public final class MTLRenderCommandEncoder extends MTLCommandEncoder {
     private static final Msg UPDATE_FENCE = Msg.ofVoid("updateFence:afterStages:", ADDRESS, JAVA_LONG);
     private static final Msg WAIT_FOR_FENCE = Msg.ofVoid("waitForFence:beforeStages:", ADDRESS, JAVA_LONG);
 
-    MTLRenderCommandEncoder(final MemorySegment handle) {
+    MTLRenderCommandEncoder(final NativeMetalDevice.Resource handle) {
         super(handle);
     }
 

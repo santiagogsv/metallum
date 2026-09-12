@@ -21,7 +21,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
-    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait, commandCreate, fenceCreate, copyPass;
+    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate;
     private final MemorySegment borrowedDevice;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
@@ -32,7 +32,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 10) throw new IllegalStateException("Expected Metallum native ABI 10, found " + abiVersion);
+            if (abiVersion != 11) throw new IllegalStateException("Expected Metallum native ABI 11, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             MethodHandle borrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -61,6 +61,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             submissionWait = linker.downcallHandle(symbols.findOrThrow("metallum_submission_wait"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT));
             commandCreate = linker.downcallHandle(symbols.findOrThrow("metallum_command_buffer_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS));
             fenceCreate = linker.downcallHandle(symbols.findOrThrow("metallum_fence_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS));
+            renderPassCreate = linker.downcallHandle(symbols.findOrThrow("metallum_render_pass_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, ADDRESS));
             copyPass = linker.downcallHandle(symbols.findOrThrow("metallum_copy_pass"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT, ADDRESS, JAVA_INT));
             context = (MemorySegment) create.invokeExact();
             if (context.address() == 0) throw new IllegalStateException("Swift could not create a Metal device");
@@ -165,6 +166,17 @@ public final class NativeMetalDevice implements AutoCloseable {
             return new MemoryStats(output.getAtIndex(JAVA_LONG, 0), output.getAtIndex(JAVA_LONG, 1),
                     output.getAtIndex(JAVA_LONG, 2), output.getAtIndex(JAVA_LONG, 3), output.getAtIndex(JAVA_LONG, 4));
         } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal memory", failure); }
+    }
+
+    public Resource createRenderPass(Resource command, MemorySegment color, MemorySegment depth,
+                                     int colorLoad, int depthLoad, double[] clear) {
+        checkOpen();
+        long commandID = command.id(this);
+        if (clear.length != 5) throw new IllegalArgumentException("Expected five clear values");
+        try (Arena scratch = Arena.ofConfined()) {
+            MemorySegment values = scratch.allocateFrom(JAVA_DOUBLE, clear);
+            return ownResource((long) renderPassCreate.invokeExact(context, commandID, color, depth, colorLoad, depthLoad, values));
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot create Metal render pass", failure); }
     }
 
     public Resource createFence() {

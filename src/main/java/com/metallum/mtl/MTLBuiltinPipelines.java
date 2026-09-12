@@ -206,30 +206,8 @@ public final class MTLBuiltinPipelines {
             }
             boolean fullRegion = clampedX == 0 && clampedY == 0 && clampedMaxX == textureWidth && clampedMaxY == textureHeight;
 
-            MTLRenderCommandEncoder encoder;
-            try (MTLRenderPassDescriptor renderPass = new MTLRenderPassDescriptor()) {
-                renderPass.colorAttachment(
-                        0,
-                        colorTexture,
-                        fullRegion ? MTLRenderPassDescriptor.LOAD_ACTION_CLEAR : MTLRenderPassDescriptor.LOAD_ACTION_LOAD,
-                        MTLRenderPassDescriptor.STORE_ACTION_STORE,
-                        clearColor
-                );
-                renderPass.depthAttachment(
-                        depthTexture,
-                        fullRegion ? MTLRenderPassDescriptor.LOAD_ACTION_CLEAR : MTLRenderPassDescriptor.LOAD_ACTION_LOAD,
-                        MTLRenderPassDescriptor.STORE_ACTION_STORE,
-                        clearDepth
-                );
-                if (MTLPixelFormat.hasStencil(MTLTexture.pixelFormat(depthTexture))) {
-                    renderPass.stencilAttachment(
-                            depthTexture,
-                            MTLRenderPassDescriptor.LOAD_ACTION_DONT_CARE,
-                            MTLRenderPassDescriptor.STORE_ACTION_DONT_CARE
-                    );
-                }
-                encoder = commandBuffer.makeRenderCommandEncoder(renderPass);
-            }
+            MTLRenderCommandEncoder encoder = commandBuffer.makeRenderCommandEncoder(
+                    colorTexture, fullRegion ? 2 : 1, clearColor, depthTexture, fullRegion ? 2 : 1, clearDepth);
 
             if (globalFence != null) {
                 encoder.waitForFence(globalFence, MTLRenderStages.Fragment);
@@ -272,17 +250,8 @@ public final class MTLBuiltinPipelines {
             }
             MemorySegment drawableTexture = drawable.texture();
 
-            MTLRenderCommandEncoder encoder;
-            try (MTLRenderPassDescriptor renderPass = new MTLRenderPassDescriptor()) {
-                renderPass.colorAttachment(
-                        0,
-                        drawableTexture,
-                        MTLRenderPassDescriptor.LOAD_ACTION_DONT_CARE,
-                        MTLRenderPassDescriptor.STORE_ACTION_STORE,
-                        null
-                );
-                encoder = commandBuffer.makeRenderCommandEncoder(renderPass);
-            }
+            MTLRenderCommandEncoder encoder = commandBuffer.makeRenderCommandEncoder(
+                    drawableTexture, 0, null, MemorySegment.NULL, 0, null);
 
             if (globalFence != null) {
                 encoder.waitForFence(globalFence, MTLRenderStages.Fragment);

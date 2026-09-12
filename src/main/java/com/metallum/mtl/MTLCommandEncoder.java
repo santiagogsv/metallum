@@ -1,6 +1,6 @@
 package com.metallum.mtl;
 
-import com.metallum.objc.Msg;
+import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.objc.ObjC;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -9,12 +9,13 @@ import java.lang.foreign.MemorySegment;
 
 @Environment(EnvType.CLIENT)
 public abstract class MTLCommandEncoder {
-    private static final Msg END_ENCODING = Msg.ofVoid("endEncoding");
+    private final NativeMetalDevice.Resource owner;
 
     MemorySegment handle;
 
-    MTLCommandEncoder(final MemorySegment handle) {
-        this.handle = handle;
+    MTLCommandEncoder(final NativeMetalDevice.Resource owner) {
+        this.owner = owner;
+        this.handle = owner.borrowedHandle();
     }
 
     public MemorySegment handle() {
@@ -28,8 +29,7 @@ public abstract class MTLCommandEncoder {
         if (ObjC.isNil(this.handle)) {
             return;
         }
-        END_ENCODING.send(this.handle);
-        ObjC.release(this.handle);
+        owner.close(); // Swift ends encoding and releases the encoder together.
         this.handle = MemorySegment.NULL;
     }
 }

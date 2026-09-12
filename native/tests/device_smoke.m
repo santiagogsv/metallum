@@ -9,7 +9,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 10);
+        assert(metallum_abi_version() == 11);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -120,6 +120,18 @@ int main(void) {
             metallum_resource_destroy(context, texel);
             metallum_resource_destroy(context, depth);
             metallum_resource_destroy(context, present_sampler);
+            uint64_t render_texture = metallum_texture_create(context, MTLPixelFormatRGBA8Unorm, 4, 4, 1, 1, 0, 1, NULL);
+            uint64_t render_command = metallum_command_buffer_create(context, "Render clear lifecycle");
+            double clear_values[] = {1, 0, 0, 1, 1};
+            uint64_t pass = metallum_render_pass_create(context, render_command, metallum_resource_borrow_mtl(context, render_texture), NULL, 2, 0, clear_values);
+            assert(pass && metallum_resource_borrow_mtl(context, pass));
+            metallum_resource_destroy(context, pass); // Must end the encoder before commit.
+            metallum_resource_destroy(context, pass);
+            uint64_t render_submission = metallum_submit(context, render_command);
+            assert(render_submission && metallum_submission_wait(context, render_submission, 5000, shader_error, sizeof(shader_error)) == 1);
+            metallum_resource_destroy(context, render_submission);
+            metallum_resource_destroy(context, render_command);
+            metallum_resource_destroy(context, render_texture);
             uint64_t command = metallum_command_buffer_create(context, "Native command");
             uint64_t submission = metallum_submit(context, command);
             assert(submission);

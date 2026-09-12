@@ -4,6 +4,17 @@ import Metal
 @main
 struct ResourceDescriptorSmoke {
     static func main() {
+        for load: UInt32 in 0...2 {
+            let pass = RenderPassPolicy.descriptor(colorLoad: load, depthLoad: load, clear: [0.1, 0.2, 0.3, 0.4, 0.75])!
+            precondition(pass.colorAttachments[0].loadAction.rawValue == UInt(load))
+            precondition(pass.depthAttachment.loadAction.rawValue == UInt(load))
+            precondition(pass.colorAttachments[0].storeAction == .store && pass.depthAttachment.storeAction == .store)
+            precondition(pass.colorAttachments[0].clearColor.alpha == 0.4 && pass.depthAttachment.clearDepth == 0.75)
+            precondition(pass.stencilAttachment.loadAction == .dontCare && pass.stencilAttachment.storeAction == .dontCare)
+        }
+        precondition(RenderPassPolicy.descriptor(colorLoad: 3, depthLoad: 1, clear: [0,0,0,0,1]) == nil)
+        precondition(RenderPassPolicy.descriptor(colorLoad: 1, depthLoad: 1, clear: []) == nil)
+        precondition(metallumRenderPassCreate(nil, 0, nil, nil, 1, 1, nil) == 0)
         let shapes: [(UInt32, UInt32, MTLTextureType, Int)] = [
             (1, 0, .type2D, 1), (3, 0, .type2DArray, 3), (6, 1, .typeCube, 1), (12, 1, .typeCubeArray, 2)
         ]

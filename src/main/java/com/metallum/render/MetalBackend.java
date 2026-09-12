@@ -76,7 +76,7 @@ public class MetalBackend implements GpuBackend {
 
             cocoa.setViewLayer(metalLayer.handle());
 
-            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, "Swift resources + render pipelines, ABI 10");
+            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, "Swift resources + render pipelines, ABI 11");
 
             try {
                 MetalDevice backend = new MetalDevice(defaultShaderSource, debugOptions, metalDevice.handle(), metalLayer, deviceName, cocoa,

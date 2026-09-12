@@ -70,6 +70,7 @@ public func metallumResourceBorrowMTL(_ handle: UnsafeMutableRawPointer?, _ id: 
         guard let handle else { return nil }
         let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
         guard let object = context.resources[id] else { return nil }
+        if let pass = object as? NativeRenderPass { return Unmanaged.passUnretained(pass.encoder as AnyObject).toOpaque() }
         return Unmanaged.passUnretained(object).toOpaque()
     }
 }

@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; uint64_t length; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 10
+#define TEST_ABI_VERSION 11
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -175,4 +175,10 @@ int32_t metallum_copy_pass(void *context, uint64_t command, uint64_t fence, cons
         memcpy((char *)dst->data + words[9], (char *)src->data + words[3], words[15]);
     }
     return 1;
+}
+uint64_t metallum_render_pass_create(void *context, uint64_t command, void *color, void *depth, uint32_t color_load, uint32_t depth_load, const double *clear) {
+    Context *c = context;
+    if (!c || command >= 256 || !c->resources[command] || c->resources[command]->kind != 7 || (!color && !depth) || !clear || color_load > 2 || depth_load > 2) return 0;
+    Resource *r = calloc(1, sizeof(Resource)); assert(r); r->kind = 9;
+    return store_resource(c, r);
 }

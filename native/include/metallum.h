@@ -78,6 +78,11 @@ int32_t metallum_submission_wait(void *context, uint64_t submission, int64_t tim
  * Buffer IDs use the buffer table; texture/command/fence IDs use resources. */
 uint64_t metallum_fence_create(void *context);
 int32_t metallum_copy_pass(void *context, uint64_t command, uint64_t fence, const uint64_t *words, uint32_t count, char *error, uint32_t capacity);
+/* ABI 11: borrowed texture pointers must stay valid during this render-thread call.
+ * Clear points to five doubles (RGBA, depth). Loads: 0 discard, 1 preserve, 2 clear.
+ * Returns an owned pass ID; resource_borrow_mtl borrows its encoder.
+ * Destroying the pass ends encoding exactly once. End before command submission. */
+uint64_t metallum_render_pass_create(void *context, uint64_t command, void *color, void *depth, uint32_t color_load, uint32_t depth_load, const double *clear);
 #ifdef __cplusplus
 }
 #endif

@@ -17,7 +17,6 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 @Environment(EnvType.CLIENT)
 public final class MTLCommandBuffer {
 
-    private static final Msg RENDER_COMMAND_ENCODER = Msg.of("renderCommandEncoderWithDescriptor:", ADDRESS, ADDRESS);
     private static final Msg PRESENT_DRAWABLE = Msg.ofVoid("presentDrawable:", ADDRESS);
     private static final Msg PUSH_DEBUG_GROUP = Msg.ofVoid("pushDebugGroup:", ADDRESS);
     private static final Msg POP_DEBUG_GROUP = Msg.ofVoid("popDebugGroup");
@@ -35,59 +34,20 @@ public final class MTLCommandBuffer {
 
     public MTLCopyPass copyPass(MTLFence fence) { return new MTLCopyPass(nativeDevice, command, fence.owner()); }
 
-    MTLRenderCommandEncoder makeRenderCommandEncoder(final MTLRenderPassDescriptor descriptor) {
-        try (AutoreleasePool _ = AutoreleasePool.push()) {
-            MemorySegment encoder = RENDER_COMMAND_ENCODER.sendPtr(handle(), descriptor.handle());
-            if (ObjC.isNil(encoder)) {
-                throw new IllegalStateException("Failed to create MTLRenderCommandEncoder");
-            }
-            return new MTLRenderCommandEncoder(ObjC.retain(encoder));
-        }
+    // Load actions: discard=0, preserve=1, clear=2. Swift owns all descriptor policy.
+    MTLRenderCommandEncoder makeRenderCommandEncoder(MemorySegment color, int colorLoad,
+            @Nullable Vector4fc clearColor, MemorySegment depth, int depthLoad, @Nullable Double clearDepth) {
+        double[] clear = clearColor == null ? new double[]{0, 0, 0, 0, clearDepth == null ? 1 : clearDepth}
+                : new double[]{clearColor.x(), clearColor.y(), clearColor.z(), clearColor.w(), clearDepth == null ? 1 : clearDepth};
+        return new MTLRenderCommandEncoder(nativeDevice.createRenderPass(command, color, depth, colorLoad, depthLoad, clear));
     }
 
-    public MTLRenderCommandEncoder makeRenderCommandEncoder(
-            final MemorySegment colorTexture,
-            @Nullable final Vector4fc clearColor,
-            final MemorySegment depthTexture,
-            @Nullable final Double clearDepth,
-            final double viewportWidth,
-            final double viewportHeight
-    ) {
-        if (ObjC.isNil(colorTexture) && ObjC.isNil(depthTexture)) {
-            throw new IllegalStateException("Render pass requires a color or depth attachment");
-        }
-        try (AutoreleasePool _ = AutoreleasePool.push()) {
-            MTLRenderCommandEncoder encoder;
-            try (MTLRenderPassDescriptor renderPass = new MTLRenderPassDescriptor()) {
-                if (!ObjC.isNil(colorTexture)) {
-                    renderPass.colorAttachment(
-                            0,
-                            colorTexture,
-                            clearColor != null ? MTLRenderPassDescriptor.LOAD_ACTION_CLEAR : MTLRenderPassDescriptor.LOAD_ACTION_LOAD,
-                            MTLRenderPassDescriptor.STORE_ACTION_STORE,
-                            clearColor
-                    );
-                }
-                if (!ObjC.isNil(depthTexture)) {
-                    renderPass.depthAttachment(
-                            depthTexture,
-                            clearDepth != null ? MTLRenderPassDescriptor.LOAD_ACTION_CLEAR : MTLRenderPassDescriptor.LOAD_ACTION_LOAD,
-                            MTLRenderPassDescriptor.STORE_ACTION_STORE,
-                            clearDepth
-                    );
-                    if (MTLPixelFormat.hasStencil(MTLTexture.pixelFormat(depthTexture))) {
-                        renderPass.stencilAttachment(
-                                depthTexture,
-                                MTLRenderPassDescriptor.LOAD_ACTION_DONT_CARE,
-                                MTLRenderPassDescriptor.STORE_ACTION_DONT_CARE
-                        );
-                    }
-                }
-                encoder = makeRenderCommandEncoder(renderPass);
-            }
-            encoder.setViewport(0.0, 0.0, viewportWidth, viewportHeight, 0.0, 1.0);
-            return encoder;
-        }
+    public MTLRenderCommandEncoder makeRenderCommandEncoder(MemorySegment color, @Nullable Vector4fc clearColor,
+            MemorySegment depth, @Nullable Double clearDepth, double viewportWidth, double viewportHeight) {
+        MTLRenderCommandEncoder encoder = makeRenderCommandEncoder(color, clearColor == null ? 1 : 2,
+                clearColor, depth, clearDepth == null ? 1 : 2, clearDepth);
+        encoder.setViewport(0, 0, viewportWidth, viewportHeight, 0, 1);
+        return encoder;
     }
 
     public void clearColorDepthTexturesRegion(
