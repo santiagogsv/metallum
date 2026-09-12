@@ -2,13 +2,14 @@
 #include "metallum.h"
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 _Static_assert(sizeof(MTLDrawPrimitivesIndirectArguments) == 16, "Metal draw stride changed");
 _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal indexed draw stride changed");
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 9);
+        assert(metallum_abi_version() == 10);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -131,6 +132,27 @@ int main(void) {
             assert(submission);
             metallum_resource_destroy(context, submission); // Close safely joins without an explicit wait.
             metallum_resource_destroy(context, command);
+            uint64_t copy_src = metallum_buffer_create(context, 256, 1), copy_dst = metallum_buffer_create(context, 256, 1);
+            uint8_t *pattern = metallum_buffer_contents(context, copy_src);
+            for (int byte = 0; byte < 64; byte++) pattern[byte] = (uint8_t)byte;
+            uint64_t tex_a = metallum_texture_create(context, 70, 4, 4, 1, 1, 0, 0, NULL);
+            uint64_t tex_b = metallum_texture_create(context, 70, 4, 4, 1, 1, 0, 0, NULL);
+            uint64_t copy_command = metallum_command_buffer_create(context, "Copy round trip");
+            uint64_t copy_fence = metallum_fence_create(context);
+            uint64_t upload[] = {1, copy_src, tex_a, 0,0,0,0,4,4,0,0,0,0,16,64,0};
+            uint64_t texture_copy[] = {3, tex_a, tex_b, 0,0,0,0,4,4,0,0,0,0,0,0,0};
+            uint64_t readback[] = {2, tex_b, copy_dst, 0,0,0,0,4,4,0,0,0,0,16,64,0};
+            uint64_t buffer_copy[] = {0, copy_dst, copy_src, 0,0,0,0,0,0,64,0,0,0,0,0,64};
+            assert(metallum_copy_pass(context, copy_command, copy_fence, upload, 16, shader_error, sizeof(shader_error)) == 1);
+            assert(metallum_copy_pass(context, copy_command, copy_fence, texture_copy, 16, shader_error, sizeof(shader_error)) == 1);
+            assert(metallum_copy_pass(context, copy_command, copy_fence, readback, 16, shader_error, sizeof(shader_error)) == 1);
+            assert(metallum_copy_pass(context, copy_command, copy_fence, buffer_copy, 16, shader_error, sizeof(shader_error)) == 1);
+            uint64_t copy_submit = metallum_submit(context, copy_command);
+            assert(copy_submit && metallum_submission_wait(context, copy_submit, 5000, shader_error, sizeof(shader_error)) == 1);
+            assert(memcmp(pattern, pattern + 64, 64) == 0);
+            metallum_resource_destroy(context, copy_submit); metallum_resource_destroy(context, copy_command);
+            metallum_resource_destroy(context, copy_fence); metallum_resource_destroy(context, tex_a); metallum_resource_destroy(context, tex_b);
+            metallum_buffer_destroy(context, copy_src); metallum_buffer_destroy(context, copy_dst);
             // Device teardown owns this sampler as well as the private buffer.
             // Leave the private buffer alive to exercise device-owned cleanup.
             if (i == 0) printf("Native device: %s\n", device.name.UTF8String);

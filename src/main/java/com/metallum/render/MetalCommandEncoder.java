@@ -60,12 +60,9 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         );
     }
 
-    MTLBlitCommandEncoder blitCommandEncoder() {
+    MTLCopyPass blitCommandEncoder() {
         endEncoder();
-        MTLBlitCommandEncoder encoder = commandBuffer().makeBlitCommandEncoder();
-        encoder.waitForFence(fence);
-        currentEncoder = encoder;
-        return encoder;
+        return commandBuffer().copyPass(fence);
     }
 
     void endEncoder() {
@@ -75,8 +72,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 if (currentRenderPass != null) {
                     currentRenderPass.invalidateEncoderState();
                 }
-            } else if (currentEncoder instanceof MTLBlitCommandEncoder blitEncoder) {
-                blitEncoder.updateFence(fence);
+
             }
             currentEncoder.endEncoding();
             currentEncoder = null;
@@ -311,7 +307,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         GpuBufferSlice staging = transientMemory.uploadStaging(data, 4L, GpuBuffer.USAGE_COPY_SRC);
         MetalGpuBuffer stagingBuffer = (MetalGpuBuffer) staging.buffer();
 
-        MTLBlitCommandEncoder blit = blitCommandEncoder();
+        MTLCopyPass blit = blitCommandEncoder();
         blit.copyFromBufferToBuffer(
                 stagingBuffer.metalBuffer(),
                 staging.offset(),
@@ -356,7 +352,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     public void copyToBuffer(final GpuBufferSlice source, final GpuBufferSlice target) {
         MetalGpuBuffer sourceBuffer = (MetalGpuBuffer) source.buffer();
         MetalGpuBuffer targetBuffer = (MetalGpuBuffer) target.buffer();
-        MTLBlitCommandEncoder blit = blitCommandEncoder();
+        MTLCopyPass blit = blitCommandEncoder();
         blit.copyFromBufferToBuffer(
                 sourceBuffer.metalBuffer(),
                 source.offset(),
@@ -386,7 +382,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         int bytesPerImage = rowBytes * height;
         GpuBufferSlice slice = transientMemory.uploadStaging(source.duplicate().limit(bytesPerImage), pixelSize, GpuBuffer.USAGE_COPY_SRC);
 
-        MTLBlitCommandEncoder blit = blitCommandEncoder();
+        MTLCopyPass blit = blitCommandEncoder();
         blit.copyFromBufferToTexture(
                 ((MetalGpuBuffer) slice.buffer()).metalBuffer(),
                 slice.offset(),
@@ -394,7 +390,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 bytesPerImage,
                 width,
                 height,
-                metalDst.nativeHandle(),
+                metalDst.nativeOwner(),
                 depthOrLayer,
                 mipLevel,
                 destX,
@@ -425,7 +421,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         long skipBytes = (sourceX + (long) sourceY * sourceWidth) * texelSize;
         long rowBytes = (long) sourceWidth * texelSize;
 
-        MTLBlitCommandEncoder blit = blitCommandEncoder();
+        MTLCopyPass blit = blitCommandEncoder();
         blit.copyFromBufferToTexture(
                 ((MetalGpuBuffer) source.buffer()).metalBuffer(),
                 source.offset() + skipBytes,
@@ -433,7 +429,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 rowBytes * sourceHeight,
                 copyWidth,
                 copyHeight,
-                metalDst.nativeHandle(),
+                metalDst.nativeOwner(),
                 arrayLayer,
                 mipLevel,
                 destinationX,
@@ -466,9 +462,9 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         int rowBytes = width * bytesPerPixel;
         int bytesPerImage = rowBytes * height;
 
-        MTLBlitCommandEncoder blit = blitCommandEncoder();
+        MTLCopyPass blit = blitCommandEncoder();
         blit.copyFromTextureToBuffer(
-                texture.nativeHandle(),
+                texture.nativeOwner(),
                 0,
                 mipLevel,
                 x,
@@ -501,16 +497,16 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         MetalGpuTexture dstTexture = (MetalGpuTexture) destination;
         flushPendingClear(srcTexture);
         flushPendingClearForWrite(dstTexture);
-        MTLBlitCommandEncoder blit = blitCommandEncoder();
+        MTLCopyPass blit = blitCommandEncoder();
         blit.copyFromTextureToTexture(
-                srcTexture.nativeHandle(),
+                srcTexture.nativeOwner(),
                 0,
                 mipLevel,
                 sourceX,
                 sourceY,
                 width,
                 height,
-                dstTexture.nativeHandle(),
+                dstTexture.nativeOwner(),
                 0,
                 mipLevel,
                 destX,
@@ -563,7 +559,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             commandBuffer = null;
         }
         transientMemory.close();
-        device.queueNativeRelease(() -> ObjC.release(fence.handle()));
+        device.queueNativeRelease(fence::close);
         destroyQueue.close();
         dynamicBackingPool.close();
         pendingColorClears.clear();

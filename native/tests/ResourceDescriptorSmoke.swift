@@ -100,6 +100,12 @@ struct ResourceDescriptorSmoke {
             }
             precondition(released == nil)
         }
+        let copy = try! CopyDescription([0, 1, 2, 8, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 8])
+        precondition(copy[3] == 8 && copy[9] == 16 && copy.range(8, 8, 16))
+        precondition(!copy.range(8, 9, 16) && !copy.range(17, 0, 16))
+        for bad: [UInt64] in [[], Array(repeating: UInt64.max, count: 16), [4] + Array(repeating: 0, count: 15)] {
+            do { _ = try CopyDescription(bad); fatalError("Invalid copy accepted") } catch { }
+        }
         print("Swift Metal descriptor compatibility tests passed (no GPU required)")
     }
 }

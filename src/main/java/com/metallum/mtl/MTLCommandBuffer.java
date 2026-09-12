@@ -17,7 +17,6 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 @Environment(EnvType.CLIENT)
 public final class MTLCommandBuffer {
 
-    private static final Msg BLIT_COMMAND_ENCODER = Msg.of("blitCommandEncoder", ADDRESS);
     private static final Msg RENDER_COMMAND_ENCODER = Msg.of("renderCommandEncoderWithDescriptor:", ADDRESS, ADDRESS);
     private static final Msg PRESENT_DRAWABLE = Msg.ofVoid("presentDrawable:", ADDRESS);
     private static final Msg PUSH_DEBUG_GROUP = Msg.ofVoid("pushDebugGroup:", ADDRESS);
@@ -34,15 +33,7 @@ public final class MTLCommandBuffer {
         this.handle = command.borrowedHandle();
     }
 
-    public MTLBlitCommandEncoder makeBlitCommandEncoder() {
-        try (AutoreleasePool _ = AutoreleasePool.push()) {
-            MemorySegment encoder = BLIT_COMMAND_ENCODER.sendPtr(handle());
-            if (ObjC.isNil(encoder)) {
-                throw new IllegalStateException("Failed to create MTLBlitCommandEncoder");
-            }
-            return new MTLBlitCommandEncoder(ObjC.retain(encoder));
-        }
-    }
+    public MTLCopyPass copyPass(MTLFence fence) { return new MTLCopyPass(nativeDevice, command, fence.owner()); }
 
     MTLRenderCommandEncoder makeRenderCommandEncoder(final MTLRenderPassDescriptor descriptor) {
         try (AutoreleasePool _ = AutoreleasePool.push()) {

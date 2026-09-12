@@ -72,6 +72,12 @@ void metallum_memory_snapshot(void *context, uint64_t *output);
 uint64_t metallum_command_buffer_create(void *context, const char *label);
 uint64_t metallum_submit(void *context, uint64_t command_buffer);
 int32_t metallum_submission_wait(void *context, uint64_t submission, int64_t timeout_ms, char *error, uint32_t capacity);
+/* ABI 10: one complete fenced copy pass. Payload is 16 uint64_t words:
+ * op(0 BB,1 BT,2 TB,3 TT), srcID,dstID,srcOffsetOrSlice,srcLevel,srcX,srcY,
+ * width,height,dstOffsetOrSlice,dstLevel,dstX,dstY,rowBytes,imageBytes,size.
+ * Buffer IDs use the buffer table; texture/command/fence IDs use resources. */
+uint64_t metallum_fence_create(void *context);
+int32_t metallum_copy_pass(void *context, uint64_t command, uint64_t fence, const uint64_t *words, uint32_t count, char *error, uint32_t capacity);
 #ifdef __cplusplus
 }
 #endif

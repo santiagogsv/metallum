@@ -113,6 +113,19 @@ public final class NativeDeviceSmoke {
                     try { device.waitSubmission(submission, 0); throw new AssertionError("Closed submission accepted"); }
                     catch (IllegalStateException expected) { }
                 }
+                try (var copyCommand = device.createCommandBuffer(null); var fence = device.createFence();
+                     var src = device.createBuffer(64, true); var dst = device.createBuffer(64, true)) {
+                    src.contents().reinterpret(64).set(ValueLayout.JAVA_LONG, 8, 12345L);
+                    long[] words = {0, src.id(device), dst.id(device), 8, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 8};
+                    device.copyPass(copyCommand, fence, words);
+                    var invalid = words.clone(); invalid[3] = 65;
+                    try { device.copyPass(copyCommand, fence, invalid); throw new AssertionError("Invalid copy range accepted"); }
+                    catch (IllegalStateException expected) { }
+                    try (var submission = device.submit(copyCommand)) {
+                        if (!device.waitSubmission(submission, 5000)) throw new AssertionError("Copy timeout");
+                    }
+                    if (dst.contents().reinterpret(64).get(ValueLayout.JAVA_LONG, 16) != 12345L) throw new AssertionError("Copy offsets/data mismatch");
+                }
                 var remaining = device.memoryStats();
                 if (remaining.buffers() != 0 || remaining.resources() != 0) throw new AssertionError("Owned resources remain after cycle: " + remaining);
             }
@@ -143,7 +156,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 9")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 10")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

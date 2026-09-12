@@ -20,8 +20,10 @@ public class PackagedLibrarySmoke {
         try (Arena arena = Arena.ofConfined()) {
             var symbols = SymbolLookup.libraryLookup(extracted, arena);
             var abi = Linker.nativeLinker().downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(ValueLayout.JAVA_INT));
-            if ((int) abi.invokeExact() != 9) throw new AssertionError("Wrong packaged ABI");
+            if ((int) abi.invokeExact() != 10) throw new AssertionError("Wrong packaged ABI");
             symbols.findOrThrow("metallum_command_buffer_create");
+            symbols.findOrThrow("metallum_copy_pass");
+            symbols.findOrThrow("metallum_fence_create");
             symbols.findOrThrow("metallum_submit");
             symbols.findOrThrow("metallum_submission_wait");
             symbols.findOrThrow("metallum_memory_snapshot");

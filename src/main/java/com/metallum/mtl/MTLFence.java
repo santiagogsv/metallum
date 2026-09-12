@@ -1,10 +1,7 @@
 package com.metallum.mtl;
-
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-
+import com.metallum.nativebridge.NativeMetalDevice;
 import java.lang.foreign.MemorySegment;
-
-@Environment(EnvType.CLIENT)
-public record MTLFence(MemorySegment handle) {
+public record MTLFence(NativeMetalDevice.Resource owner) implements AutoCloseable {
+    public MemorySegment handle() { return owner.borrowedHandle(); }
+    public void close() { owner.close(); }
 }

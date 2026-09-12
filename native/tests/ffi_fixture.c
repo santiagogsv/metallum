@@ -4,11 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct { void *data; int shared; } Buffer;
+typedef struct { void *data; int shared; uint64_t length; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 9
+#define TEST_ABI_VERSION 10
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -17,7 +17,7 @@ uint64_t metallum_buffer_create(void *context, uint64_t length, uint32_t shared)
     Context *c = context;
     if (!c || !length || length > 4096 || shared > 1 || c->next >= 256) return 0;
     uint64_t id = c->next++;
-    c->buffers[id] = (Buffer){calloc(1, length), shared};
+    c->buffers[id] = (Buffer){calloc(1, length), shared, length};
     assert(c->buffers[id].data);
     return id;
 }
@@ -159,4 +159,20 @@ int32_t metallum_submission_wait(void *context, uint64_t id, int64_t timeout, ch
     Context *c = context;
     if (error && capacity) error[0] = 0;
     return c && id < 256 && c->resources[id] && c->resources[id]->kind == 6 ? 1 : -1;
+}
+
+uint64_t metallum_fence_create(void *context) { return metallum_depth_state_create(context, 0, 0); }
+int32_t metallum_copy_pass(void *context, uint64_t command, uint64_t fence, const uint64_t *words, uint32_t count, char *error, uint32_t capacity) {
+    if (error && capacity) error[0] = 0;
+    Context *c = context;
+    if (!c || command >= 256 || fence >= 256 || !c->resources[command] || c->resources[command]->kind != 7
+        || !c->resources[fence] || !words || count != 16 || words[0] > 3) return 0;
+    if (words[0] == 0) {
+        if (words[1] >= 256 || words[2] >= 256) return 0;
+        Buffer *src = &c->buffers[words[1]], *dst = &c->buffers[words[2]];
+        if (!src->data || !dst->data || words[3] > src->length || words[9] > dst->length
+            || words[15] > src->length - words[3] || words[15] > dst->length - words[9]) return 0;
+        memcpy((char *)dst->data + words[9], (char *)src->data + words[3], words[15]);
+    }
+    return 1;
 }
