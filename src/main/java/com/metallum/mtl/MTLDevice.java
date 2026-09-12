@@ -1,6 +1,7 @@
 package com.metallum.mtl;
 
 import com.metallum.Metallum;
+import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.objc.AutoreleasePool;
 import com.metallum.objc.Msg;
 import com.metallum.objc.ObjC;
@@ -17,7 +18,8 @@ import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 @Environment(EnvType.CLIENT)
-public record MTLDevice(MemorySegment handle) {
+public record MTLDevice(MemorySegment handle, @Nullable NativeMetalDevice nativeOwner) {
+    public MTLDevice(MemorySegment handle) { this(handle, null); }
     private static final MethodHandle CREATE_SYSTEM_DEFAULT_DEVICE = ObjC.LINKER.downcallHandle(
             ObjC.METAL.findOrThrow("MTLCreateSystemDefaultDevice"), FunctionDescriptor.of(ADDRESS));
 
@@ -118,7 +120,12 @@ public record MTLDevice(MemorySegment handle) {
         return new MTLFence(fence);
     }
 
-    public MemorySegment newFunction(final String mslSource, final String entryPoint) {
+    public MTLFunction newFunction(final String mslSource, final String entryPoint) {
+        return nativeOwner == null ? new MTLFunction(compileFunctionLegacy(mslSource, entryPoint))
+                : new MTLFunction(nativeOwner.compileFunction(mslSource, entryPoint));
+    }
+
+    private MemorySegment compileFunctionLegacy(final String mslSource, final String entryPoint) {
         try (AutoreleasePool _ = AutoreleasePool.push(); Arena arena = Arena.ofConfined()) {
             MemorySegment errorOut = arena.allocate(ADDRESS);
             MemorySegment nsSource = ObjC.nsString(mslSource);

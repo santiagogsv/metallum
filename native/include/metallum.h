@@ -37,6 +37,14 @@ uint64_t metallum_sampler_create(void *context, uint32_t repeat_u, uint32_t repe
                                 uint32_t linear_mag, uint32_t anisotropy, double max_lod);
 void *metallum_resource_borrow_mtl(void *context, uint64_t resource);
 void metallum_resource_destroy(void *context, uint64_t resource);
+/* Shader ABI 4. Source and entry are copied UTF-8 strings. Success returns an owning
+ * resource ID (release with metallum_resource_destroy); failure returns zero and writes
+ * a bounded, terminated UTF-8 diagnostic if error_capacity > 0 and error_output != NULL.
+ * Libraries are cached by full source within the device. Clear after GPU completion and
+ * pipeline/function retirement on resource reload; clearing does not invalidate owned functions. */
+uint64_t metallum_function_create(void *context, const char *source, const char *entry,
+                                  char *error_output, uint32_t error_capacity);
+void metallum_shader_libraries_clear(void *context);
 #ifdef __cplusplus
 }
 #endif

@@ -46,7 +46,7 @@ final class MetalDevice implements GpuDeviceBackend {
     public final MTLCommandQueue commandQueue;
     private final Map<RenderPipeline, MetalCompiledRenderPipeline> compiledPipelines = new IdentityHashMap<>();
     private final Map<ShaderCompilationKey, IntermediaryShaderModule> shaderCache = new HashMap<>();
-    private final Map<MslFunctionKey, MemorySegment> functionCache = new HashMap<>();
+    private final Map<MslFunctionKey, MTLFunction> functionCache = new HashMap<>();
     private final Map<Long, MemorySegment> depthStencilStates = new HashMap<>();
     private final ShaderSource defaultShaderSource;
 
@@ -65,7 +65,7 @@ final class MetalDevice implements GpuDeviceBackend {
         this.defaultShaderSource = defaultShaderSource;
         this.debugOptions = debugOptions;
         this.metalDeviceHandle = metalDeviceHandle;
-        this.metalDevice = new MTLDevice(metalDeviceHandle);
+        this.metalDevice = new MTLDevice(metalDeviceHandle, nativeOwner);
         this.metalLayer = metalLayer;
         this.cocoa = cocoa;
         MTLCommandQueue.setDebugLabelsEnabled(this.useLabels());
@@ -176,12 +176,9 @@ final class MetalDevice implements GpuDeviceBackend {
         this.compiledPipelines.clear();
         this.shaderCache.values().forEach(IntermediaryShaderModule::close);
         this.shaderCache.clear();
-        for (MemorySegment function : this.functionCache.values()) {
-            if (!ObjC.isNil(function)) {
-                ObjC.release(function);
-            }
-        }
+        this.functionCache.values().forEach(MTLFunction::close);
         this.functionCache.clear();
+        if (this.nativeOwner != null) this.nativeOwner.clearShaderLibraries();
     }
 
     @Override
@@ -294,7 +291,7 @@ final class MetalDevice implements GpuDeviceBackend {
         return this.functionCache.computeIfAbsent(
                 new MslFunctionKey(msl, entryPoint),
                 key -> this.metalDevice.newFunction(key.msl(), key.entryPoint())
-        );
+        ).handle();
     }
 
     private record ShaderCompilationKey(Identifier id, ShaderType type, ShaderDefines defines) {

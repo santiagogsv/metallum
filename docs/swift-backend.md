@@ -1,6 +1,6 @@
 # Incremental Swift backend
 
-This page records the original architecture and milestone 1. The current resource migration is [milestone 3](swift-textures.md). See [milestone 2](swift-buffers.md) for the current macOS 27 target, supported `@c` exports, ABI 2, buffer ownership, and MSL 4.1 changes.
+This page records the original architecture and milestone 1. The current migration is [milestone 4](swift-shaders.md). See [milestone 2](swift-buffers.md) for the current macOS 27 target, supported `@c` exports, ABI 2, buffer ownership, and MSL 4.1 changes.
 
 ## Current architecture
 

@@ -10,6 +10,17 @@ public final class NativeDeviceSmoke {
             NativeMetalDevice device = new NativeMetalDevice(library);
             try (device) {
                 if (device.borrowedDevice().address() == 0) throw new AssertionError("Null borrowed device");
+                String shader = "#include <metal_stdlib>\nusing namespace metal;\nkernel void first() {}\nkernel void second() {}";
+                try (var first = device.compileFunction(shader, "first"); var second = device.compileFunction(shader, "second")) {
+                    device.clearShaderLibraries();
+                    if (first.borrowedHandle().address() == 0 || second.borrowedHandle().address() == 0) throw new AssertionError("Function lost after cache clear");
+                }
+                try { device.compileFunction(shader, "missing"); throw new AssertionError("Missing entry accepted"); }
+                catch (IllegalStateException expected) {
+                    if (expected.getCause() == null || !expected.getCause().getMessage().contains("MSL compilation failed")) throw new AssertionError(expected);
+                }
+                try { device.compileFunction("invalid", "first"); throw new AssertionError("Invalid source accepted"); }
+                catch (IllegalStateException expected) { }
                 NativeMetalDevice.Resource texture = device.createTexture(70, 8, 8, 2, 4, false, true, "Texture test é");
                 try (var fullView = texture.createView(0, 4); var partialView = texture.createView(1, 2);
                      var sampler = device.createSampler(true, false, true, false, 16, 8.5)) {
@@ -87,7 +98,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 3")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 4")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

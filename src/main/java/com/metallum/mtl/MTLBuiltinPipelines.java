@@ -378,24 +378,17 @@ public final class MTLBuiltinPipelines {
             final long depthFormat,
             final long writeMask
     ) {
-        MemorySegment vertexFunction = device.newFunction(mslSource, vertexEntry);
-        MemorySegment fragmentFunction = device.newFunction(mslSource, fragmentEntry);
-        if (ObjC.isNil(vertexFunction) || ObjC.isNil(fragmentFunction)) {
-            releaseIfPresent(vertexFunction);
-            releaseIfPresent(fragmentFunction);
-            return MemorySegment.NULL;
+        try (MTLFunction vertex = device.newFunction(mslSource, vertexEntry);
+             MTLFunction fragment = device.newFunction(mslSource, fragmentEntry)) {
+            if (ObjC.isNil(vertex.handle()) || ObjC.isNil(fragment.handle())) return MemorySegment.NULL;
+            try (MTLRenderPipelineDescriptor descriptor = new MTLRenderPipelineDescriptor()) {
+                descriptor.setCompiledFunctions(vertex.handle(), fragment.handle());
+                descriptor.setColorAttachmentFormat(0, colorFormat);
+                descriptor.setDepthStencilFormats(depthFormat, MTLPixelFormat.Invalid.value);
+                descriptor.disableBlending(0, writeMask);
+                return device.newRenderPipelineState(descriptor);
+            }
         }
-        MemorySegment pipeline;
-        try (MTLRenderPipelineDescriptor descriptor = new MTLRenderPipelineDescriptor()) {
-            descriptor.setCompiledFunctions(vertexFunction, fragmentFunction);
-            descriptor.setColorAttachmentFormat(0, colorFormat);
-            descriptor.setDepthStencilFormats(depthFormat, MTLPixelFormat.Invalid.value);
-            descriptor.disableBlending(0, writeMask);
-            pipeline = device.newRenderPipelineState(descriptor);
-        }
-        ObjC.release(vertexFunction);
-        ObjC.release(fragmentFunction);
-        return pipeline;
     }
 
     private static MemorySegment buildPresentSampler(final MTLSamplerMinMagFilter filter) {
@@ -406,12 +399,6 @@ public final class MTLBuiltinPipelines {
             descriptor.sAddressMode(MTLSamplerAddressMode.ClampToEdge);
             descriptor.tAddressMode(MTLSamplerAddressMode.ClampToEdge);
             return device.newSamplerState(descriptor);
-        }
-    }
-
-    private static void releaseIfPresent(final MemorySegment object) {
-        if (!ObjC.isNil(object)) {
-            ObjC.release(object);
         }
     }
 

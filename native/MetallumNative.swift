@@ -2,6 +2,7 @@ import Foundation
 import Metal
 
 final class DeviceContext {
+    var shaderLibraries: [String: any MTLLibrary] = [:]
     var resources: [UInt64: AnyObject] = [:]
     var nextResourceID: UInt64 = 1
     var buffers: [UInt64: MTLBuffer] = [:]
@@ -11,7 +12,7 @@ final class DeviceContext {
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 3 }
+public func metallumABIVersion() -> UInt32 { 4 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {

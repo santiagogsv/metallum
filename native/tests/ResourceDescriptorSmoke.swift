@@ -35,6 +35,19 @@ struct ResourceDescriptorSmoke {
         }
         precondition(ResourceDescriptors.sampler(repeatU: 0, repeatV: 0, linearMin: 0, linearMag: 0,
                 anisotropy: 17, maxLod: 0) == nil)
+        precondition(ShaderCompilation.options().languageVersion == .version4_1)
+        var bytes = [CChar](repeating: 99, count: 8)
+        bytes.withUnsafeMutableBufferPointer { buffer in
+            ShaderCompilation.writeError("ééééé", to: buffer.baseAddress, capacity: 8)
+            precondition(String(cString: buffer.baseAddress!) == "ééé")
+            ShaderCompilation.writeError("long error", to: buffer.baseAddress, capacity: 1)
+            precondition(buffer[0] == 0 && buffer[1] != 0)
+            buffer[0] = 42
+            ShaderCompilation.writeError("ignored", to: buffer.baseAddress, capacity: 0)
+            precondition(buffer[0] == 42)
+            precondition(metallumFunctionCreate(nil, nil, nil, buffer.baseAddress, 8) == 0)
+            precondition(buffer[0] != 0 && buffer[7] == 0)
+        }
         print("Swift Metal descriptor compatibility tests passed (no GPU required)")
     }
 }

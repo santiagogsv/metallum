@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 3
+#define TEST_ABI_VERSION 4
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -89,3 +89,20 @@ void metallum_resource_destroy(void *context, uint64_t id) {
         c->resources[id] = NULL;
     }
 }
+
+uint64_t metallum_function_create(void *context, const char *source, const char *entry, char *error, uint32_t capacity) {
+    if (error && capacity) error[0] = 0;
+    if (!context || !source || !entry || !strcmp(entry, "missing") || !strcmp(source, "invalid")) {
+        const char *message = "Fixture shader compilation failed";
+        if (error && capacity) {
+            size_t count = strlen(message);
+            if (count >= capacity) count = capacity - 1;
+            memcpy(error, message, count); error[count] = 0;
+        }
+        return 0;
+    }
+    Resource *r = calloc(1, sizeof(Resource));
+    assert(r); r->kind = 3;
+    return store_resource(context, r);
+}
+void metallum_shader_libraries_clear(void *context) { (void)context; }

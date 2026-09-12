@@ -20,6 +20,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle destroy;
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
+    private final MethodHandle functionCreate, shaderLibrariesClear;
     private final MemorySegment borrowedDevice;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
@@ -30,7 +31,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 3) throw new IllegalStateException("Expected Metallum native ABI 3, found " + abiVersion);
+            if (abiVersion != 4) throw new IllegalStateException("Expected Metallum native ABI 4, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             MethodHandle borrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -46,6 +47,9 @@ public final class NativeMetalDevice implements AutoCloseable {
                     ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_DOUBLE));
             resourceBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_resource_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_LONG));
             resourceDestroy = linker.downcallHandle(symbols.findOrThrow("metallum_resource_destroy"), FunctionDescriptor.ofVoid(ADDRESS, JAVA_LONG));
+            functionCreate = linker.downcallHandle(symbols.findOrThrow("metallum_function_create"), FunctionDescriptor.of(JAVA_LONG,
+                    ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
+            shaderLibrariesClear = linker.downcallHandle(symbols.findOrThrow("metallum_shader_libraries_clear"), FunctionDescriptor.ofVoid(ADDRESS));
             context = (MemorySegment) create.invokeExact();
             if (context.address() == 0) throw new IllegalStateException("Swift could not create a Metal device");
             try {
@@ -116,6 +120,27 @@ public final class NativeMetalDevice implements AutoCloseable {
                     linearMin ? 1 : 0, linearMag ? 1 : 0, anisotropy, maxLod);
             return ownResource(id);
         } catch (Throwable failure) { throw new IllegalStateException("Cannot create Swift Metal sampler", failure); }
+    }
+
+    public Resource compileFunction(String source, String entryPoint) {
+        checkOpen();
+        if (source == null || source.isEmpty() || entryPoint == null || entryPoint.isEmpty()) {
+            throw new IllegalArgumentException("Shader source and entry point must be nonempty");
+        }
+        try (Arena strings = Arena.ofConfined()) {
+            MemorySegment msl = strings.allocateFrom(source);
+            MemorySegment name = strings.allocateFrom(entryPoint);
+            MemorySegment error = strings.allocate(4096);
+            long id = (long) functionCreate.invokeExact(context, msl, name, error, 4096);
+            if (id == 0) throw new IllegalStateException("MSL compilation failed for " + entryPoint + ": " + error.getString(0));
+            return ownResource(id);
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot compile Swift Metal function: " + entryPoint + ": " + failure.getMessage(), failure); }
+    }
+
+    public void clearShaderLibraries() {
+        checkOpen();
+        try { shaderLibrariesClear.invokeExact(context); }
+        catch (Throwable failure) { throw new IllegalStateException("Cannot clear Swift shader libraries", failure); }
     }
 
     private Resource ownResource(long id) throws Throwable {

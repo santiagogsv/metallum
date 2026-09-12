@@ -8,7 +8,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 3);
+        assert(metallum_abi_version() == 4);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -73,6 +73,22 @@ int main(void) {
             uint64_t sampler = metallum_sampler_create(context, 1, 0, 1, 0, 16, 8.5);
             assert(sampler && metallum_resource_borrow_mtl(context, sampler));
             assert(metallum_texture_view_create(context, sampler, 0, 1) == 0);
+            char shader_error[4096];
+            const char *msl = "#include <metal_stdlib>\nusing namespace metal;\nkernel void first() {}\nkernel void second() {}";
+            uint64_t first = metallum_function_create(context, msl, "first", shader_error, sizeof(shader_error));
+            assert(first && shader_error[0] == 0);
+            uint64_t second = metallum_function_create(context, msl, "second", shader_error, sizeof(shader_error));
+            assert(second && shader_error[0] == 0);
+            metallum_shader_libraries_clear(context);
+            id<MTLFunction> function = (__bridge id<MTLFunction>)metallum_resource_borrow_mtl(context, first);
+            assert([function.name isEqualToString:@"first"]);
+            function = nil;
+            metallum_resource_destroy(context, first);
+            metallum_resource_destroy(context, second);
+            assert(metallum_function_create(context, msl, "missing", shader_error, sizeof(shader_error)) == 0);
+            assert(shader_error[0] != 0);
+            assert(metallum_function_create(context, "invalid", "first", shader_error, sizeof(shader_error)) == 0);
+            assert(shader_error[0] != 0);
             // Device teardown owns this sampler as well as the private buffer.
             // Leave the private buffer alive to exercise device-owned cleanup.
             if (i == 0) printf("Native device: %s\n", device.name.UTF8String);
