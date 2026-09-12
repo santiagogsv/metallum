@@ -69,7 +69,7 @@ publishing {
 tasks.register('buildNative', Exec) {
     group = 'build'
     description = 'Build the Swift Metal device bridge for the host macOS architecture'
-    inputs.files('native/MetallumNative.swift', 'native/MetalResources.swift', 'native/MetalShaders.swift', 'native/MetalPipelines.swift', 'native/MetalSubmission.swift', 'native/MetalDiagnostics.swift', 'native/MetalCopies.swift', 'native/MetalRenderPass.swift', 'native/MetalDraws.swift', 'native/MetalPresentation.swift')
+    inputs.files('native/MetallumNative.swift', 'native/MetalResources.swift', 'native/MetalShaders.swift', 'native/MetalPipelines.swift', 'native/MetalSubmission.swift', 'native/MetalDiagnostics.swift', 'native/MetalUpscaling.swift', 'native/MetalCopies.swift', 'native/MetalRenderPass.swift', 'native/MetalDraws.swift', 'native/MetalPresentation.swift')
     inputs.property('nativeTarget', 'arm64-apple-macosx27.0')
     inputs.property('swiftLanguageMode', '6')
     outputs.file(layout.buildDirectory.file('native/libmetallum_native.dylib'))
@@ -83,7 +83,7 @@ tasks.register('buildNative', Exec) {
             '-swift-version', '6', '-target', 'arm64-apple-macosx27.0',
             '-module-cache-path', file('build/native/module-cache').absolutePath,
             '-Xlinker', '-install_name', '-Xlinker', '@rpath/libmetallum_native.dylib',
-            '-module-name', 'MetallumNative', 'native/MetallumNative.swift', 'native/MetalResources.swift', 'native/MetalShaders.swift', 'native/MetalPipelines.swift', 'native/MetalSubmission.swift', 'native/MetalDiagnostics.swift', 'native/MetalCopies.swift', 'native/MetalRenderPass.swift', 'native/MetalDraws.swift', 'native/MetalPresentation.swift',
+            '-module-name', 'MetallumNative', 'native/MetallumNative.swift', 'native/MetalResources.swift', 'native/MetalShaders.swift', 'native/MetalPipelines.swift', 'native/MetalSubmission.swift', 'native/MetalDiagnostics.swift', 'native/MetalUpscaling.swift', 'native/MetalCopies.swift', 'native/MetalRenderPass.swift', 'native/MetalDraws.swift', 'native/MetalPresentation.swift',
             '-o', file('build/native/libmetallum_native.dylib').absolutePath
 }
 

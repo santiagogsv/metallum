@@ -5,6 +5,6 @@ cd "$(dirname "$0")/../.."
 mkdir -p build/native
 xcrun swiftc -parse-as-library -swift-version 6 -target arm64-apple-macosx27.0 \
     -module-cache-path build/native/module-cache \
-    native/MetallumNative.swift native/MetalResources.swift native/MetalShaders.swift native/MetalPipelines.swift native/MetalSubmission.swift native/MetalDiagnostics.swift native/MetalCopies.swift native/MetalRenderPass.swift native/MetalDraws.swift native/MetalPresentation.swift native/tests/ResourceDescriptorSmoke.swift \
+    native/MetallumNative.swift native/MetalResources.swift native/MetalShaders.swift native/MetalPipelines.swift native/MetalSubmission.swift native/MetalDiagnostics.swift native/MetalUpscaling.swift native/MetalCopies.swift native/MetalRenderPass.swift native/MetalDraws.swift native/MetalPresentation.swift native/tests/ResourceDescriptorSmoke.swift \
     -o build/native/descriptor_smoke
 build/native/descriptor_smoke

@@ -122,9 +122,9 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                     "avg %.3f ms, max %.3f ms", stats.gpuTotalNs() / (stats.timed() * 1_000_000.0), stats.gpuMaxNs() / 1_000_000.0);
             com.metallum.Metallum.LOGGER.info("[metallum-performance] retiredSubmissions={}, timedSubmissions={}, gpuExecution={}, cpuWaitTotalMs={}, bindingWrites={}, skippedBindings={}",
                     stats.completed(), stats.timed(), gpu, stats.cpuWaitNs() / 1_000_000.0, stats.bindingWrites(), stats.bindingSkips());
-            com.metallum.Metallum.LOGGER.info("[metallum-command-memory] activeSlots={}, idleSlots={}, stagingKiB={}, allocatorMiB={}, heldReferences={}, activeResidency={}, idleResidency={}",
+            com.metallum.Metallum.LOGGER.info("[metallum-command-memory] activeSlots={}, idleSlots={}, stagingKiB={}, allocatorMiB={}, heldReferences={}, activeResidency={}, idleResidency={}, allocatorTrims={}, upscaleMiB={}",
                     stats.activeSlots(), stats.idleSlots(), stats.stagingBytes() / 1024, stats.allocatorBytes() / 1048576.0,
-                    stats.heldReferences(), stats.activeResidency(), stats.idleResidency());
+                    stats.heldReferences(), stats.activeResidency(), stats.idleResidency(), stats.allocatorTrims(), stats.upscaleBytes() / 1048576.0);
         }
     }
 
@@ -236,6 +236,14 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             currentRenderPass.popDebugGroup();
             currentRenderPass = null;
         }
+    }
+
+    void upscale(MetalGpuTexture source, MetalGpuTexture destination) {
+        flushPendingClear(source);
+        flushPendingClear(destination);
+        submitRenderPass();
+        endEncoder();
+        commandBuffer().upscale(source.nativeResource(), destination.nativeResource(), fence);
     }
 
     void presentTextureToDrawable(final CAMetalLayer layer, final GpuTextureView textureView) {

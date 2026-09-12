@@ -3,6 +3,7 @@ import Metal
 
 // Render-thread counters. No GPU waits, callback locks, or sample history in snapshots.
 final class RendererCounters {
+    var allocatorTrims: UInt64 = 0
     var completed: UInt64 = 0, timed: UInt64 = 0, gpuTotal: UInt64 = 0, gpuMax: UInt64 = 0
     var cpuWait: UInt64 = 0, bindingWrites: UInt64 = 0, bindingSkips: UInt64 = 0
     func record(_ nanoseconds: UInt64?) {
@@ -50,7 +51,16 @@ public func metallumDiagnosticsSnapshot(_ handle: UnsafeMutableRawPointer?, _ ou
         for command in active { staging += command.stagingBytes; allocator += command.allocatorBytes }
         let values = context.counters.drain() + [UInt64(active.count), UInt64(context.idleCommandSlots.count),
             staging, allocator, active.reduce(0) { $0 + $1.referenceCount },
-            UInt64(active.filter { $0.hasResidency }.count), UInt64(context.idleResidencySets.count)]
+            UInt64(active.filter { $0.hasResidency }.count), UInt64(context.idleResidencySets.count), context.counters.allocatorTrims,
+            context.spatialScaler.map { UInt64($0.input.allocatedSize + $0.output.allocatedSize) } ?? 0]
+        context.counters.allocatorTrims = 0
         for (i, value) in values.enumerated() { output[i] = value }
+    }
+}
+
+// Reclaim burst-grown allocators after a reuse window, never on every frame.
+enum CommandStoragePolicy {
+    static func keep(bytes: UInt64, reuses: Int) -> Bool {
+        bytes <= 64 * 1024 * 1024 || reuses < 120
     }
 }

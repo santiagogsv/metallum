@@ -21,7 +21,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
-    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, diagnosticsSnapshot, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, layerCreate, layerConfigure, present, renderBytes, textureInfo, commandDebug, deviceInfo, deviceName;
+    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, diagnosticsSnapshot, upscale, upscaleClear, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, layerCreate, layerConfigure, present, renderBytes, textureInfo, commandDebug, deviceInfo, deviceName;
     // Reused only on the confined render thread; calls consume the words synchronously.
     private final MemorySegment drawWords = arena.allocate(64, 8);
     private final MethodHandle deviceBorrow;
@@ -34,7 +34,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 15) throw new IllegalStateException("Expected Metallum native ABI 15, found " + abiVersion);
+            if (abiVersion != 16) throw new IllegalStateException("Expected Metallum native ABI 16, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             deviceBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -58,6 +58,8 @@ public final class NativeMetalDevice implements AutoCloseable {
             depthCreate = linker.downcallHandle(symbols.findOrThrow("metallum_depth_state_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_INT));
             presentSamplerCreate = linker.downcallHandle(symbols.findOrThrow("metallum_present_sampler_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT));
             bufferTextureCreate = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_texture_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG));
+            upscale = linker.downcallHandle(symbols.findOrThrow("metallum_upscale"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT));
+            upscaleClear = linker.downcallHandle(symbols.findOrThrow("metallum_upscale_clear"), FunctionDescriptor.ofVoid(ADDRESS));
             diagnosticsSnapshot = linker.downcallHandle(symbols.findOrThrow("metallum_diagnostics_snapshot"), FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
             memorySnapshot = linker.downcallHandle(symbols.findOrThrow("metallum_memory_snapshot"), FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
             submit = linker.downcallHandle(symbols.findOrThrow("metallum_submit"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG));
@@ -170,19 +172,19 @@ public final class NativeMetalDevice implements AutoCloseable {
     public record Diagnostics(long completed, long timed, long gpuTotalNs, long gpuMaxNs, long cpuWaitNs,
                               long bindingWrites, long bindingSkips, long activeSlots, long idleSlots,
                               long stagingBytes, long allocatorBytes, long heldReferences,
-                              long activeResidency, long idleResidency) {}
+                              long activeResidency, long idleResidency, long allocatorTrims, long upscaleBytes) {}
 
     /** Drains interval counters; memory values are current snapshots. Does not wait for GPU work. */
     public Diagnostics diagnostics() {
         checkOpen();
         try (Arena call = Arena.ofConfined()) {
-            var out = call.allocate(JAVA_LONG, 14);
+            var out = call.allocate(JAVA_LONG, 16);
             diagnosticsSnapshot.invokeExact(context, out);
             return new Diagnostics(out.getAtIndex(JAVA_LONG, 0), out.getAtIndex(JAVA_LONG, 1),
                     out.getAtIndex(JAVA_LONG, 2), out.getAtIndex(JAVA_LONG, 3), out.getAtIndex(JAVA_LONG, 4),
                     out.getAtIndex(JAVA_LONG, 5), out.getAtIndex(JAVA_LONG, 6), out.getAtIndex(JAVA_LONG, 7),
                     out.getAtIndex(JAVA_LONG, 8), out.getAtIndex(JAVA_LONG, 9), out.getAtIndex(JAVA_LONG, 10),
-                    out.getAtIndex(JAVA_LONG, 11), out.getAtIndex(JAVA_LONG, 12), out.getAtIndex(JAVA_LONG, 13));
+                    out.getAtIndex(JAVA_LONG, 11), out.getAtIndex(JAVA_LONG, 12), out.getAtIndex(JAVA_LONG, 13), out.getAtIndex(JAVA_LONG, 14), out.getAtIndex(JAVA_LONG, 15));
         } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal diagnostics", failure); }
     }
 
@@ -225,6 +227,21 @@ public final class NativeMetalDevice implements AutoCloseable {
             if ((int) layerConfigure.invokeExact(context, id, width, height, immediate ? 1 : 0) != 1)
                 throw new IllegalArgumentException("Invalid Metal layer configuration");
         } catch (Throwable failure) { throw new IllegalStateException("Cannot configure Metal layer", failure); }
+    }
+
+    public void upscale(Resource command, Resource source, Resource destination, Resource fence) {
+        checkOpen();
+        long c = command.id(this), s = source.id(this), d = destination.id(this), f = fence.id(this);
+        try (Arena call = Arena.ofConfined()) {
+            var error = call.allocate(4096);
+            int result = (int) upscale.invokeExact(context, c, s, d, f, error, 4096);
+            if (result != 1) throw new IllegalStateException("MetalFX: " + error.getString(0));
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot upscale with MetalFX", failure); }
+    }
+    public void clearUpscaler() {
+        checkOpen();
+        try { upscaleClear.invokeExact(context); }
+        catch (Throwable failure) { throw new IllegalStateException("Cannot release MetalFX cache", failure); }
     }
 
     public void present(Resource command, Resource layer, Resource source, Resource fence,

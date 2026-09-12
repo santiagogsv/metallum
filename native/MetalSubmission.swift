@@ -98,6 +98,7 @@ final class CommandSlot {
     let fragment: StageBindings
     var staging: [any MTLBuffer] = []
     var stagingOffset = 0
+    var reuses = 0
     var stagingBytes: UInt64 { staging.reduce(0) { $0 + UInt64($1.length) } }
     init(device: any MTLDevice, counters: RendererCounters) throws {
         guard let metal = device.makeCommandBuffer(), let allocator = device.makeCommandAllocator() else {

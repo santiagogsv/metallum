@@ -1,8 +1,10 @@
 import Foundation
 import Metal
+import MetalFX
 
 final class DeviceContext {
     let counters = RendererCounters()
+    var spatialScaler: SpatialUpscaler?
     var shaderLibraries: [String: any MTLLibrary] = [:]
     var resources: [UInt64: AnyObject] = [:]
     var nextResourceID: UInt64 = 1
@@ -21,6 +23,11 @@ final class DeviceContext {
         return try CommandSlot(device: device, counters: counters)
     }
     func recycleCommandSlot(_ slot: CommandSlot) {
+        slot.reuses += 1
+        guard CommandStoragePolicy.keep(bytes: slot.allocator.allocatedSize(), reuses: slot.reuses) else {
+            counters.allocatorTrims &+= 1
+            return
+        }
         slot.reset()
         if idleCommandSlots.count < 3 { idleCommandSlots.append(slot) }
     }
@@ -41,7 +48,7 @@ final class DeviceContext {
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 15 }
+public func metallumABIVersion() -> UInt32 { 16 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {
@@ -137,6 +144,7 @@ public func metallumDeviceInfo(_ handle: UnsafeMutableRawPointer?, _ field: UInt
     case 0: return UInt64(device.maxBufferLength)
     case 1: return device.recommendedMaxWorkingSetSize
     case 2: return device.supportsFamily(.metal4) ? 1 : 0
+    case 3: return MTLFXSpatialScalerDescriptor.supportsMetal4FX(device) ? 1 : 0
     default: return 0
     }
 }

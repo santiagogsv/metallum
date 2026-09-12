@@ -13,3 +13,6 @@ xcrun clang -dynamiclib -DTEST_ABI_VERSION=1 -I native/include native/tests/ffi_
     NativeDeviceSmoke "$PWD/build/native/libffi_fixture.dylib" "$PWD/build/native/libold_abi_fixture.dylib"
 "$javac_bin" --release 25 -d build/native/test-classes src/main/java/com/metallum/render/BoundedBufferPool.java native/tests/BoundedBufferPoolSmoke.java
 "$java_bin" -cp build/native/test-classes com.metallum.render.BoundedBufferPoolSmoke
+
+"$javac_bin" --release 25 -d build/native/test-classes src/main/java/com/metallum/render/RenderScale.java native/tests/RenderScaleSmoke.java
+"$java_bin" -cp build/native/test-classes RenderScaleSmoke

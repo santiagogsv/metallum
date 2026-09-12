@@ -9,7 +9,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 15);
+        assert(metallum_abi_version() == 16);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -190,7 +190,7 @@ int main(void) {
             metallum_resource_destroy(context, render_submission);
             metallum_resource_destroy(context, render_command);
             metallum_resource_destroy(context, render_texture);
-            uint64_t diagnostics[14];
+            uint64_t diagnostics[16];
             metallum_diagnostics_snapshot(context, diagnostics); // Drain earlier work.
             uint64_t command = metallum_command_buffer_create(context, "Native command");
             uint64_t submission = metallum_submit(context, command);

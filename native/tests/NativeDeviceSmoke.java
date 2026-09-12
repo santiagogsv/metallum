@@ -12,8 +12,23 @@ public final class NativeDeviceSmoke {
             NativeMetalDevice device = new NativeMetalDevice(library);
             try (device) {
                 if (args.length > 1 && !device.diagnostics().equals(new NativeMetalDevice.Diagnostics(
-                        100,101,102,103,104,105,106,107,108,109,110,111,112,113))) {
+                        100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115))) {
                     throw new AssertionError("Diagnostics FFM field mapping changed");
+                }
+                if (args.length > 1) {
+                    try (var command = device.createCommandBuffer("Upscale contract");
+                         var source = device.createTexture(70, 4, 4, 1, 1, false, true, "source");
+                         var destination = device.createTexture(70, 8, 8, 1, 1, false, true, "destination");
+                         var fence = device.createFence(); var other = new NativeMetalDevice(library);
+                         var foreign = other.createFence()) {
+                        device.upscale(command, source, destination, fence);
+                        device.clearUpscaler();
+                        try { device.upscale(command, source, destination, foreign); throw new AssertionError("Foreign fence accepted"); }
+                        catch (IllegalArgumentException expected) { }
+                        source.close();
+                        try { device.upscale(command, source, destination, fence); throw new AssertionError("Closed upscale source accepted"); }
+                        catch (IllegalStateException expected) { }
+                    }
                 }
                 if (device.borrowedDevice().address() == 0) throw new AssertionError("Null borrowed device");
                 String shader = "#include <metal_stdlib>\nusing namespace metal;\nkernel void first() {}\nkernel void second() {}";
@@ -177,7 +192,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 15")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 16")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

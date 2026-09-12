@@ -45,6 +45,8 @@ final class MetalGpuTexture extends GpuTexture {
         this.nativeResource = this.nativeOwner;
     }
 
+    MetalDevice device() { return device; }
+
     int pixelSize() {
         return this.getFormat().blockSize();
     }

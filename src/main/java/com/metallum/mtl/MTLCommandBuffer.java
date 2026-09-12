@@ -24,6 +24,10 @@ public final class MTLCommandBuffer {
         this.command = nativeDevice.createCommandBuffer(label);
     }
 
+    public void upscale(NativeMetalDevice.Resource source, NativeMetalDevice.Resource destination, MTLFence fence) {
+        nativeDevice.upscale(command, source, destination, fence.owner());
+    }
+
     public MTLCopyPass copyPass(MTLFence fence) { return new MTLCopyPass(nativeDevice, command, fence.owner()); }
 
     // Load actions: discard=0, preserve=1, clear=2. Swift owns all descriptor policy.

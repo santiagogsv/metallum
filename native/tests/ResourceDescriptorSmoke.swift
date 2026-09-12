@@ -4,6 +4,13 @@ import Metal
 @main
 struct ResourceDescriptorSmoke {
     static func main() {
+        let limit: UInt64 = 64 * 1024 * 1024
+        precondition(CommandStoragePolicy.keep(bytes: limit, reuses: 120))
+        precondition(CommandStoragePolicy.keep(bytes: limit + 1, reuses: 119))
+        precondition(!CommandStoragePolicy.keep(bytes: limit + 1, reuses: 120))
+        precondition(!CommandStoragePolicy.keep(bytes: limit * 20, reuses: 121))
+        precondition(metallumUpscale(nil, 0, 0, 0, 0, nil, 0) == 0)
+        metallumUpscaleClear(nil)
         precondition(RendererCounters.duration(start: 1, end: 1.25) == 250_000_000)
         for (start, end) in [(0.0, 1.0), (2.0, 1.0), (Double.nan, 2), (1, Double.infinity)] {
             precondition(RendererCounters.duration(start: start, end: end) == nil)

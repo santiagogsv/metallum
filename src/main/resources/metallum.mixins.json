@@ -7,6 +7,7 @@
   ],
   "client": [
     "render.PreferredGraphicsApiMixin",
+    "render.MetalUpscalingMixin",
     "sodium.DrawBackendMixin",
     "sodium.DrawContextMixin",
     "sodium.SodiumPreferredGraphicsApiMixin"

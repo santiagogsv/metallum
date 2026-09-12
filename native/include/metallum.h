@@ -66,12 +66,18 @@ uint64_t metallum_buffer_texture_create(void *context, uint64_t buffer_id, uint6
  * cached libraries, owned buffer bytes, MTLDevice.currentAllocatedSize bytes.
  * Render thread only; counts may include aliased resources. */
 void metallum_memory_snapshot(void *context, uint64_t *output);
-/* ABI 15: 14 uint64 words. First seven drain interval counters: retired submissions,
+/* ABI 16: 16 uint64 words. First seven drain interval counters: retired submissions,
  * valid GPU samples, GPU total ns, GPU max ns, CPU completion-wait ns, binding writes,
  * skipped binding writes. Then gauges: active slots, idle slots, staging bytes,
- * allocator bytes, held references, active residency sets, idle residency sets.
+ * allocator bytes, held references, active residency sets, idle residency sets,
+ * interval allocator trims, cached MetalFX texture bytes.
  * GPU samples describe submissions, not frames. No GPU wait occurs in this call. */
 void metallum_diagnostics_snapshot(void *context, uint64_t *output);
+/* Optional Metal 4 spatial upscale, RGBA8 perceptual input/output, larger destination.
+ * IDs use resources. Both textures are command-owned until GPU completion. */
+int32_t metallum_upscale(void *context, uint64_t command, uint64_t source, uint64_t destination,
+                        uint64_t fence, char *error, uint32_t capacity);
+void metallum_upscale_clear(void *context);
 /* ABI 9: submit accepts an owned command-buffer resource ID and returns an owned
  * resource ID. Wait: 1 complete, 0 timeout, -1 error with UTF-8 diagnostic.
  * Closing a submission joins GPU work and all completion handlers. */
