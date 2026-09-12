@@ -19,6 +19,11 @@ public class RenderAdapterSmoke {
         for (int i = 0; i < 8; i++) if (output.getAtIndex(JAVA_LONG, 3 + i) != (i < words.length ? words[i] : 0))
             throw new AssertionError("Operation " + op + " argument " + i);
     }
+    private static void checkCopy(MethodHandle snapshot, MemorySegment output, long[] expected) throws Throwable {
+        snapshot.invokeExact(output);
+        for (int i = 0; i < 16; i++) if (output.getAtIndex(JAVA_LONG, i) != expected[i])
+            throw new AssertionError("Copy argument " + i + " for operation " + expected[0]);
+    }
     public static void main(String[] args) throws Throwable {
         Path fixture = Path.of(args[0]);
         try (Arena arena = Arena.ofConfined(); var device = new NativeMetalDevice(fixture)) {
@@ -88,6 +93,24 @@ public class RenderAdapterSmoke {
                 if (output.getAtIndex(JAVA_LONG, 0) != 0) throw new AssertionError("Empty batch crossed FFM");
                 try { encoder.multiDrawIndexed(MTLPrimitiveType.Triangle, MTLIndexType.UInt16, buffer, offsets, counts, vertices, 3); throw new AssertionError("Short arrays accepted"); }
                 catch (IllegalArgumentException expected) { }
+                var copySnapshot = Linker.nativeLinker().downcallHandle(symbols.findOrThrow("metallum_test_last_copy"), FunctionDescriptor.ofVoid(ADDRESS));
+                var copyOutput = arena.allocate(128, 8);
+                var copyCommand = new MTLCommandBuffer(device, "Copy adapter reuse");
+                try {
+                    var copies = copyCommand.copyPass(fence);
+                    if (copies != copyCommand.copyPass(fence)) throw new AssertionError("Copy adapter was not reused");
+                    long sourceID = buffer.nativeOwner().id(device), destinationID = indirect.nativeOwner().id(device), textureID = ptr.id(device);
+                    for (int repeat = 0; repeat < 3; repeat++) {
+                        copies.copyFromTextureToTexture(ptr, 1, 2, 3, 4, 5, 6, ptr, 7, 8, 9, 10);
+                        checkCopy(copySnapshot, copyOutput, new long[]{3,textureID,textureID,1,2,3,4,5,6,7,8,9,10,0,0,0});
+                        copies.copyFromTextureToBuffer(ptr, 2, 1, 4, 3, 6, 5, indirect, 8, 24, 120);
+                        checkCopy(copySnapshot, copyOutput, new long[]{2,textureID,destinationID,2,1,4,3,6,5,8,0,0,0,24,120,0});
+                        copies.copyFromBufferToTexture(buffer, 4, 24, 120, 6, 5, ptr, 2, 1, 4, 3);
+                        checkCopy(copySnapshot, copyOutput, new long[]{1,sourceID,textureID,4,0,0,0,6,5,2,1,4,3,24,120,0});
+                        copies.copyFromBufferToBuffer(buffer, 4, indirect, 8, 12);
+                        checkCopy(copySnapshot, copyOutput, new long[]{0,sourceID,destinationID,4,0,0,0,0,0,8,0,0,0,0,0,12});
+                    }
+                } finally { copyCommand.close(); }
                 encoder.endEncoding(); encoder.endEncoding();
                 try { encoder.setVertexTexture(ptr, 0); throw new AssertionError("Closed pass accepted"); }
                 catch (IllegalStateException expected) { }
@@ -98,6 +121,6 @@ public class RenderAdapterSmoke {
             }
             if (device.memoryStats().resources() != 0) throw new AssertionError("Adapter resources leaked");
         }
-        System.out.println("Render adapters, native draw batching and presentation ownership passed (C fixture)");
+        System.out.println("Render adapters, reusable copy payloads, native draw batching and presentation ownership passed (C fixture)");
     }
 }

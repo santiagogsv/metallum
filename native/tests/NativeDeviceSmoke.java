@@ -12,7 +12,7 @@ public final class NativeDeviceSmoke {
             NativeMetalDevice device = new NativeMetalDevice(library);
             try (device) {
                 if (args.length > 1 && !device.diagnostics().equals(new NativeMetalDevice.Diagnostics(
-                        100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115))) {
+                        100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117))) {
                     throw new AssertionError("Diagnostics FFM field mapping changed");
                 }
                 if (args.length > 1) {
@@ -192,7 +192,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 17")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 18")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

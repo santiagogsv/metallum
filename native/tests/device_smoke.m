@@ -9,7 +9,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 17);
+        assert(metallum_abi_version() == 18);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -212,7 +212,7 @@ int main(void) {
                     assert(metallum_render_command(context, fx_pass, 21, fx_fence, 0, fence_words) == 1);
                     metallum_resource_destroy(context, fx_pass);
                     assert(metallum_upscale(context, fx_command, source, target, fx_fence, shader_error, sizeof(shader_error)) == 1);
-                    uint64_t fx_stats[16]; metallum_diagnostics_snapshot(context, fx_stats);
+                    uint64_t fx_stats[18]; metallum_diagnostics_snapshot(context, fx_stats);
                     if (i == 0) printf("MetalFX cycle %d cached intermediate bytes: %llu\n", cycle, (unsigned long long)fx_stats[15]);
                     uint64_t pixels = metallum_buffer_create(context, out_size * out_size * 4, 1);
                     uint64_t read[] = {2, target, pixels, 0,0,0,0,out_size,out_size,0,0,0,0,out_size*4,out_size*out_size*4,0};
@@ -228,7 +228,7 @@ int main(void) {
                     metallum_buffer_destroy(context, pixels);
                     metallum_resource_destroy(context, fx_submission); metallum_resource_destroy(context, fx_command);
                 }
-                uint64_t fx_stats[16]; metallum_diagnostics_snapshot(context, fx_stats);
+                uint64_t fx_stats[18]; metallum_diagnostics_snapshot(context, fx_stats);
                 assert(fx_stats[15] == 0);
             }
             uint64_t layer = metallum_layer_create(context, 2);
@@ -264,7 +264,7 @@ int main(void) {
             metallum_resource_destroy(context, render_submission);
             metallum_resource_destroy(context, render_command);
             metallum_resource_destroy(context, render_texture);
-            uint64_t diagnostics[16];
+            uint64_t diagnostics[18];
             metallum_diagnostics_snapshot(context, diagnostics); // Drain earlier work.
             uint64_t command = metallum_command_buffer_create(context, "Native command");
             uint64_t submission = metallum_submit(context, command);
@@ -288,20 +288,57 @@ int main(void) {
             uint8_t *pattern = metallum_buffer_contents(context, copy_src);
             for (int byte = 0; byte < 64; byte++) pattern[byte] = (uint8_t)byte;
             uint64_t tex_a = metallum_texture_create(context, 70, 4, 4, 1, 1, 0, 0, NULL);
-            uint64_t tex_b = metallum_texture_create(context, 70, 4, 4, 1, 1, 0, 0, NULL);
+            uint64_t tex_b = metallum_texture_create(context, 70, 4, 4, 1, 1, 0, 1, NULL);
             uint64_t copy_command = metallum_command_buffer_create(context, "Copy round trip");
             uint64_t copy_fence = metallum_fence_create(context);
             uint64_t upload[] = {1, copy_src, tex_a, 0,0,0,0,4,4,0,0,0,0,16,64,0};
             uint64_t texture_copy[] = {3, tex_a, tex_b, 0,0,0,0,4,4,0,0,0,0,0,0,0};
             uint64_t readback[] = {2, tex_b, copy_dst, 0,0,0,0,4,4,0,0,0,0,16,64,0};
             uint64_t buffer_copy[] = {0, copy_dst, copy_src, 0,0,0,0,0,0,64,0,0,0,0,0,64};
+            metallum_diagnostics_snapshot(context, diagnostics);
+            upload[3] = 240; // Valid starting offset, but the complete image does not fit.
+            assert(metallum_copy_pass(context, copy_command, copy_fence, upload, 16, shader_error, sizeof(shader_error)) == 0);
+            upload[3] = 0;
             assert(metallum_copy_pass(context, copy_command, copy_fence, upload, 16, shader_error, sizeof(shader_error)) == 1);
             assert(metallum_copy_pass(context, copy_command, copy_fence, texture_copy, 16, shader_error, sizeof(shader_error)) == 1);
             assert(metallum_copy_pass(context, copy_command, copy_fence, readback, 16, shader_error, sizeof(shader_error)) == 1);
             assert(metallum_copy_pass(context, copy_command, copy_fence, buffer_copy, 16, shader_error, sizeof(shader_error)) == 1);
+            metallum_diagnostics_snapshot(context, diagnostics);
+            assert(diagnostics[16] == 4 && diagnostics[17] == 1); // Four dependent transfers, one Metal pass.
+            if (i == 0) puts("Four dependent transfers encoded in one Metal copy pass");
+            // Changing fences ends the previous copy pass. Invalid transfers do not poison it.
+            uint64_t other_fence = metallum_fence_create(context);
+            readback[9] = 240;
+            assert(metallum_copy_pass(context, copy_command, other_fence, readback, 16, shader_error, sizeof(shader_error)) == 0);
+            readback[9] = 0;
+            assert(metallum_copy_pass(context, copy_command, other_fence, readback, 16, shader_error, sizeof(shader_error)) == 1);
+            metallum_diagnostics_snapshot(context, diagnostics);
+            assert(diagnostics[16] == 1 && diagnostics[17] == 1);
+            // Starting a render pass closes pending copies before changing their source.
+            double blue_clear[] = {0, 0, 1, 1, 1};
+            uint64_t transition_pass = metallum_render_pass_create(context, copy_command, tex_b, 0, 2, 0, blue_clear);
+            assert(transition_pass);
+            int64_t transition_fence[8] = {3};
+            assert(metallum_render_command(context, transition_pass, 21, other_fence, 0, transition_fence) == 1);
+            metallum_resource_destroy(context, transition_pass);
+            readback[9] = 64;
+            assert(metallum_copy_pass(context, copy_command, other_fence, readback, 16, shader_error, sizeof(shader_error)) == 1);
+            metallum_resource_destroy(context, other_fence);
             uint64_t copy_submit = metallum_submit(context, copy_command);
             assert(copy_submit && metallum_submission_wait(context, copy_submit, 5000, shader_error, sizeof(shader_error)) == 1);
             assert(memcmp(pattern, pattern + 64, 64) == 0);
+            const uint8_t *transition_pixels = metallum_buffer_contents(context, copy_dst);
+            for (int pixel = 0; pixel < 16; pixel++) {
+                assert(transition_pixels[64 + pixel * 4] == 0 && transition_pixels[64 + pixel * 4 + 2] == 255);
+            }
+            metallum_diagnostics_snapshot(context, diagnostics);
+            assert(diagnostics[16] == 1 && diagnostics[17] == 1);
+            metallum_diagnostics_snapshot(context, diagnostics);
+            assert(diagnostics[16] == 0 && diagnostics[17] == 0);
+            // An abandoned command must close its still-open copy encoder before recycling storage.
+            uint64_t abandoned = metallum_command_buffer_create(context, "Abandoned copy pass");
+            assert(metallum_copy_pass(context, abandoned, copy_fence, upload, 16, shader_error, sizeof(shader_error)) == 1);
+            metallum_resource_destroy(context, abandoned);
             metallum_resource_destroy(context, copy_submit); metallum_resource_destroy(context, copy_command);
             metallum_resource_destroy(context, copy_fence); metallum_resource_destroy(context, tex_a); metallum_resource_destroy(context, tex_b);
             metallum_buffer_destroy(context, copy_src); metallum_buffer_destroy(context, copy_dst);

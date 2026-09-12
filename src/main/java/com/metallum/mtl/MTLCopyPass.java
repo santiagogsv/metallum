@@ -2,14 +2,23 @@ package com.metallum.mtl;
 
 import com.metallum.nativebridge.NativeMetalDevice;
 
-/** Value adapter for a complete Swift copy pass. No Objective-C encoder exists in Java. */
+/** Value adapter for copies grouped into Swift-owned passes. No Objective-C encoder exists in Java. */
 public final class MTLCopyPass {
     private final NativeMetalDevice device;
     private final NativeMetalDevice.Resource command, fence;
     public MTLCopyPass(NativeMetalDevice device, NativeMetalDevice.Resource command, NativeMetalDevice.Resource fence) {
         this.device = device; this.command = command; this.fence = fence;
     }
-    private void copy(long... words) { device.copyPass(command, fence, words); }
+    private final long[] words = new long[16];
+    private void copy(long op, long src, long dst, long srcOffset, long srcLevel, long srcX, long srcY,
+                      long width, long height, long dstOffset, long dstLevel, long dstX, long dstY,
+                      long row, long image, long size) {
+        words[0] = op; words[1] = src; words[2] = dst; words[3] = srcOffset;
+        words[4] = srcLevel; words[5] = srcX; words[6] = srcY; words[7] = width;
+        words[8] = height; words[9] = dstOffset; words[10] = dstLevel; words[11] = dstX;
+        words[12] = dstY; words[13] = row; words[14] = image; words[15] = size;
+        device.copyPass(command, fence, words);
+    }
     public void copyFromBufferToBuffer(MTLBuffer src, long offset, MTLBuffer dst, long target, long size) {
         copy(0, src.nativeOwner().id(device), dst.nativeOwner().id(device), offset, 0, 0, 0, 0, 0, target, 0, 0, 0, 0, 0, size);
     }

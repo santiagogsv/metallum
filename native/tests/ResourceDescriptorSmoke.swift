@@ -212,6 +212,13 @@ struct ResourceDescriptorSmoke {
         precondition(!DrawBatchPolicy.indirectRange(offset: 0, count: -1, stride: 16, length: 80))
         precondition(DrawBatchPolicy.indirectRange(offset: 80, count: 0, stride: 16, length: 80))
 
+        precondition(CopyDescription.bufferRegion(offset: 4, row: 16, image: 32, width: 3, height: 2, pixelBytes: 4, length: 32))
+        precondition(!CopyDescription.bufferRegion(offset: 4, row: 16, image: 32, width: 3, height: 2, pixelBytes: 4, length: 31))
+        precondition(!CopyDescription.bufferRegion(offset: 0, row: 8, image: 0, width: 3, height: 1, pixelBytes: 4, length: 64))
+        precondition(!CopyDescription.bufferRegion(offset: 1, row: 16, image: 0, width: 3, height: 1, pixelBytes: 4, length: 64))
+        precondition(!CopyDescription.bufferRegion(offset: 0, row: Int.max - 3, image: 0, width: 3, height: Int.max, pixelBytes: 4, length: Int.max))
+        precondition(CopyDescription.bufferRegion(offset: 0, row: 16, image: 0, width: 3, height: 1, pixelBytes: 4, length: 12))
+
         let copy = try! CopyDescription([0, 1, 2, 8, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 8])
         precondition(copy[3] == 8 && copy[9] == 16 && copy.range(8, 8, 16))
         precondition(!copy.range(8, 9, 16) && !copy.range(17, 0, 16))

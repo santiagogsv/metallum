@@ -69,6 +69,7 @@ public func metallumUpscale(_ handle: UnsafeMutableRawPointer?, _ commandID: UIn
                   source.pixelFormat == .rgba8Unorm, destination.pixelFormat == .rgba8Unorm else {
                 throw PipelineDescriptionError.invalid("Invalid MetalFX command, dimensions or color format")
             }
+            command.endCopies()
             if context.spatialScaler?.matches(source, destination) != true {
                 context.spatialScaler = try SpatialUpscaler(context: context, source: source, destination: destination)
             }

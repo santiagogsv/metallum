@@ -129,6 +129,8 @@ final class NativeCommand {
     private weak var context: DeviceContext?
     private var residency: (any MTLResidencySet)?
     var drawables: [any CAMetalDrawable] = []
+    private var copyEncoder: (any MTL4ComputeCommandEncoder)?
+    private var copyFence: (any MTLFence)?
     var encoderOpen = false
     var submitted = false
     private let references = CommandReferences()
@@ -145,6 +147,31 @@ final class NativeCommand {
         slot.metal.beginCommandBuffer(allocator: slot.allocator)
     }
     func hold(_ object: AnyObject?) { references.hold(object) }
+    // Consecutive copies share a pass. Keep their ordering explicit within that pass.
+    func copyPass(fence: any MTLFence) throws -> any MTL4ComputeCommandEncoder {
+        if let encoder = copyEncoder, let previous = copyFence, previous === fence {
+            encoder.barrier(afterEncoderStages: .blit, beforeEncoderStages: .blit, visibilityOptions: .device)
+            context?.counters.copyCommands &+= 1
+            return encoder
+        }
+        endCopies()
+        guard let encoder = metal.makeComputeCommandEncoder() else {
+            throw PipelineDescriptionError.invalid("Cannot open Metal copy pass")
+        }
+        encoder.barrier(afterQueueStages: .all, beforeStages: .blit, visibilityOptions: .device)
+        encoder.waitForFence(fence, beforeEncoderStages: .blit)
+        copyEncoder = encoder; copyFence = fence
+        hold(fence as AnyObject)
+        context?.counters.copyCommands &+= 1
+        context?.counters.copyPasses &+= 1
+        return encoder
+    }
+    func endCopies() {
+        guard let encoder = copyEncoder, let fence = copyFence else { return }
+        encoder.updateFence(fence, afterEncoderStages: .blit)
+        encoder.endEncoding()
+        copyEncoder = nil; copyFence = nil
+    }
     func resetBindings() { slot!.resetBindings() }
     func inlineBytes(_ bytes: UnsafeRawPointer, length: Int) -> MTLGPUAddress? {
         guard let slot, let context else { return nil }
@@ -176,6 +203,7 @@ final class NativeCommand {
         if let slot { context?.recycleCommandSlot(slot); self.slot = nil }
     }
     deinit {
+        endCopies()
         if !submitted, let slot { slot.metal.endCommandBuffer() }
         retire()
     }
@@ -237,6 +265,7 @@ public func metallumSubmit(_ handle: UnsafeMutableRawPointer?, _ commandID: UInt
         guard let command = context.resources[commandID] as? NativeCommand, command.canEncode else { return 0 }
         // Reserve the ID before constructing an owner that waits during destruction.
         guard context.nextResourceID < UInt64.max, let queue = context.commandQueue else { return 0 }
+        command.endCopies()
         do { try command.prepareResidency() } catch { return 0 }
         let submission = NativeSubmission(command, queue: queue, feedbackQueue: context.feedbackQueue)
         let id = context.storeResource(submission)
@@ -268,6 +297,7 @@ public func metallumSubmissionWait(_ handle: UnsafeMutableRawPointer?, _ id: UIn
 public func metallumCommandDebug(_ handle: UnsafeMutableRawPointer?, _ id: UInt64, _ label: UnsafePointer<CChar>?) -> Int32 {
     autoreleasepool {
         guard let handle, let command = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue().resources[id] as? NativeCommand, !command.submitted else { return 0 }
+        command.endCopies()
         if let label { command.metal.pushDebugGroup(String(cString: label)) } else { command.metal.popDebugGroup() }
         return 1
     }

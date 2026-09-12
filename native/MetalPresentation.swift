@@ -49,6 +49,7 @@ public func metallumPresent(_ handle: UnsafeMutableRawPointer?, _ commandID: UIn
               let linearState = context.resources[linear] as? any MTLSamplerState else { return 0 }
         let fence = context.resources[fenceID] as? any MTLFence
         guard fenceID == 0 || fence != nil else { return 0 }
+        command.endCopies()
         guard let drawable = layer.nextDrawable() else { return 1 }
         let target = drawable.texture
         let descriptor = MTL4RenderPassDescriptor()

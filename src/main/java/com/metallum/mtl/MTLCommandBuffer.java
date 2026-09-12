@@ -7,8 +7,6 @@ import org.joml.Vector4fc;
 import org.jspecify.annotations.Nullable;
 
 
-import static java.lang.foreign.ValueLayout.ADDRESS;
-import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 @Environment(EnvType.CLIENT)
 public final class MTLCommandBuffer {
@@ -18,6 +16,8 @@ public final class MTLCommandBuffer {
     private final NativeMetalDevice nativeDevice;
     private final NativeMetalDevice.Resource command;
     private NativeMetalDevice.Resource submission;
+    private MTLCopyPass copies;
+    private MTLFence copyFence;
 
     public MTLCommandBuffer(NativeMetalDevice nativeDevice, String label) {
         this.nativeDevice = nativeDevice;
@@ -28,7 +28,13 @@ public final class MTLCommandBuffer {
         nativeDevice.upscale(command, source, destination, fence.owner());
     }
 
-    public MTLCopyPass copyPass(MTLFence fence) { return new MTLCopyPass(nativeDevice, command, fence.owner()); }
+    public MTLCopyPass copyPass(MTLFence fence) {
+        if (copies == null || copyFence != fence) {
+            copies = new MTLCopyPass(nativeDevice, command, fence.owner());
+            copyFence = fence;
+        }
+        return copies;
+    }
 
     // Load actions: discard=0, preserve=1, clear=2. Swift owns all descriptor policy.
     MTLRenderCommandEncoder makeRenderCommandEncoder(NativeMetalDevice.Resource color, int colorLoad,

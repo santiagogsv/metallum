@@ -54,6 +54,7 @@ public func metallumRenderPassCreate(_ handle: UnsafeMutableRawPointer?, _ comma
                 descriptor.stencilAttachment.texture = texture
             }
         }
+        command.endCopies()
         guard let encoder = command.metal.makeRenderCommandEncoder(descriptor: descriptor) else { return 0 }
         command.resetBindings()
         encoder.setArgumentTable(command.vertex.metal, stages: .vertex)

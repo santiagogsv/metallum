@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; uint64_t length; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 17
+#define TEST_ABI_VERSION 18
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -162,11 +162,14 @@ int32_t metallum_submission_wait(void *context, uint64_t id, int64_t timeout, ch
 }
 
 uint64_t metallum_fence_create(void *context) { return metallum_depth_state_create(context, 0, 0); }
+static uint64_t last_copy[16];
+void metallum_test_last_copy(uint64_t *out) { memcpy(out, last_copy, sizeof(last_copy)); }
 int32_t metallum_copy_pass(void *context, uint64_t command, uint64_t fence, const uint64_t *words, uint32_t count, char *error, uint32_t capacity) {
     if (error && capacity) error[0] = 0;
     Context *c = context;
     if (!c || command >= 256 || fence >= 256 || !c->resources[command] || c->resources[command]->kind != 7
         || !c->resources[fence] || !words || count != 16 || words[0] > 3) return 0;
+    memcpy(last_copy, words, sizeof(last_copy));
     if (words[0] == 0) {
         if (words[1] >= 256 || words[2] >= 256) return 0;
         Buffer *src = &c->buffers[words[1]], *dst = &c->buffers[words[2]];
@@ -239,7 +242,7 @@ void metallum_device_name(void *context, char *output, uint32_t capacity) { if (
 
 /* Distinct values validate every diagnostics field across Java FFM. */
 void metallum_diagnostics_snapshot(void *context, uint64_t *out) {
-    (void)context; for (uint64_t i = 0; i < 16; ++i) out[i] = 100 + i;
+    (void)context; for (uint64_t i = 0; i < 18; ++i) out[i] = 100 + i;
 }
 
 int32_t metallum_upscale(void *context, uint64_t command, uint64_t source, uint64_t destination,

@@ -120,8 +120,8 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             var stats = device.nativeOwner().diagnostics();
             String gpu = stats.timed() == 0 ? "unavailable" : String.format(java.util.Locale.ROOT,
                     "avg %.3f ms, max %.3f ms", stats.gpuTotalNs() / (stats.timed() * 1_000_000.0), stats.gpuMaxNs() / 1_000_000.0);
-            com.metallum.Metallum.LOGGER.info("[metallum-performance] retiredSubmissions={}, timedSubmissions={}, gpuExecution={}, cpuWaitTotalMs={}, bindingWrites={}, skippedBindings={}",
-                    stats.completed(), stats.timed(), gpu, stats.cpuWaitNs() / 1_000_000.0, stats.bindingWrites(), stats.bindingSkips());
+            com.metallum.Metallum.LOGGER.info("[metallum-performance] retiredSubmissions={}, timedSubmissions={}, gpuExecution={}, cpuWaitTotalMs={}, bindingWrites={}, skippedBindings={}, copyCommands={}, copyPasses={}",
+                    stats.completed(), stats.timed(), gpu, stats.cpuWaitNs() / 1_000_000.0, stats.bindingWrites(), stats.bindingSkips(), stats.copyCommands(), stats.copyPasses());
             com.metallum.Metallum.LOGGER.info("[metallum-command-memory] activeSlots={}, idleSlots={}, stagingKiB={}, allocatorMiB={}, heldReferences={}, activeResidency={}, idleResidency={}, allocatorTrims={}, upscaleMiB={}",
                     stats.activeSlots(), stats.idleSlots(), stats.stagingBytes() / 1024, stats.allocatorBytes() / 1048576.0,
                     stats.heldReferences(), stats.activeResidency(), stats.idleResidency(), stats.allocatorTrims(), stats.upscaleBytes() / 1048576.0);
@@ -331,7 +331,6 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 destination.offset(),
                 length
         );
-        endEncoder();
     }
 
     private void orphanWrite(final MetalGpuBuffer buffer, final long offset, final ByteBuffer data) {
@@ -376,7 +375,6 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 target.offset(),
                 source.length()
         );
-        endEncoder();
     }
 
     @Override
@@ -412,7 +410,6 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 destX,
                 destY
         );
-        endEncoder();
     }
 
     @Override
@@ -451,7 +448,6 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 destinationX,
                 destinationY
         );
-        endEncoder();
     }
 
     @Override
@@ -493,7 +489,6 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 bytesPerImage
         );
 
-        endEncoder();
         queueForDestroy(callback);
     }
 
@@ -528,7 +523,6 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 destX,
                 destY
         );
-        endEncoder();
     }
 
     @Override
@@ -580,6 +574,9 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         dynamicBackingPool.close();
         pendingColorClears.clear();
         pendingDepthClears.clear();
+        var stats = device.nativeOwner().diagnostics();
+        com.metallum.Metallum.LOGGER.info("Metal copy encoding since last report: {} transfers in {} passes",
+                stats.copyCommands(), stats.copyPasses());
     }
 
     void waitForSubmittedGpuWork() {

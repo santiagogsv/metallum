@@ -4,6 +4,7 @@ import Metal
 // Render-thread counters. No GPU waits, callback locks, or sample history in snapshots.
 final class RendererCounters {
     var allocatorTrims: UInt64 = 0
+    var copyCommands: UInt64 = 0, copyPasses: UInt64 = 0
     var completed: UInt64 = 0, timed: UInt64 = 0, gpuTotal: UInt64 = 0, gpuMax: UInt64 = 0
     var cpuWait: UInt64 = 0, bindingWrites: UInt64 = 0, bindingSkips: UInt64 = 0
     func record(_ nanoseconds: UInt64?) {
@@ -52,8 +53,10 @@ public func metallumDiagnosticsSnapshot(_ handle: UnsafeMutableRawPointer?, _ ou
         let values = context.counters.drain() + [UInt64(active.count), UInt64(context.idleCommandSlots.count),
             staging, allocator, active.reduce(0) { $0 + $1.referenceCount },
             UInt64(active.filter { $0.hasResidency }.count), UInt64(context.idleResidencySets.count), context.counters.allocatorTrims,
-            context.spatialScaler.map { UInt64(($0.input?.allocatedSize ?? 0) + ($0.output?.allocatedSize ?? 0)) } ?? 0]
+            context.spatialScaler.map { UInt64(($0.input?.allocatedSize ?? 0) + ($0.output?.allocatedSize ?? 0)) } ?? 0,
+            context.counters.copyCommands, context.counters.copyPasses]
         context.counters.allocatorTrims = 0
+        context.counters.copyCommands = 0; context.counters.copyPasses = 0
         for (i, value) in values.enumerated() { output[i] = value }
     }
 }

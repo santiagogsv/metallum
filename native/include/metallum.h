@@ -66,11 +66,12 @@ uint64_t metallum_buffer_texture_create(void *context, uint64_t buffer_id, uint6
  * cached libraries, owned buffer bytes, MTLDevice.currentAllocatedSize bytes.
  * Render thread only; counts may include aliased resources. */
 void metallum_memory_snapshot(void *context, uint64_t *output);
-/* ABI 16: 16 uint64 words. First seven drain interval counters: retired submissions,
+/* ABI 18: 18 uint64 words. First seven drain interval counters: retired submissions,
  * valid GPU samples, GPU total ns, GPU max ns, CPU completion-wait ns, binding writes,
  * skipped binding writes. Then gauges: active slots, idle slots, staging bytes,
  * allocator bytes, held references, active residency sets, idle residency sets,
- * interval allocator trims, cached MetalFX texture bytes.
+ * interval allocator trims, cached MetalFX texture bytes. Words 16/17 drain
+ * copy-command and copy-pass counts since the last snapshot.
  * GPU samples describe submissions, not frames. No GPU wait occurs in this call. */
 void metallum_diagnostics_snapshot(void *context, uint64_t *output);
 /* Optional Metal 4 spatial upscale, RGBA8 perceptual input/output, larger destination.
@@ -84,7 +85,7 @@ void metallum_upscale_clear(void *context);
 uint64_t metallum_command_buffer_create(void *context, const char *label);
 uint64_t metallum_submit(void *context, uint64_t command_buffer);
 int32_t metallum_submission_wait(void *context, uint64_t submission, int64_t timeout_ms, char *error, uint32_t capacity);
-/* ABI 10: one complete fenced copy pass. Payload is 16 uint64_t words:
+/* ABI 18: copies with the same fence share a pass until rendering, upscale, present or submit. Payload is 16 uint64_t words:
  * op(0 BB,1 BT,2 TB,3 TT), srcID,dstID,srcOffsetOrSlice,srcLevel,srcX,srcY,
  * width,height,dstOffsetOrSlice,dstLevel,dstX,dstY,rowBytes,imageBytes,size.
  * Buffer IDs use the buffer table; texture/command/fence IDs use resources. */

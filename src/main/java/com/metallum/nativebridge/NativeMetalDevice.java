@@ -24,6 +24,8 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, diagnosticsSnapshot, upscale, upscaleClear, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, renderIndexedBatch, layerCreate, layerConfigure, present, renderBytes, textureInfo, commandDebug, deviceInfo, deviceName;
     // Reused only on the confined render thread; calls consume the words synchronously.
     private final MemorySegment drawWords = arena.allocate(64, 8);
+    private final MemorySegment copyWords = arena.allocate(128, 8);
+    private final MemorySegment copyError = arena.allocate(4096);
     public static final int INDEXED_BATCH_CAPACITY = 256;
     private final MemorySegment indexedBatch = arena.allocate(INDEXED_BATCH_CAPACITY * 16L, 8);
     private final MethodHandle deviceBorrow;
@@ -36,7 +38,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 17) throw new IllegalStateException("Expected Metallum native ABI 17, found " + abiVersion);
+            if (abiVersion != 18) throw new IllegalStateException("Expected Metallum native ABI 18, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             deviceBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -175,19 +177,19 @@ public final class NativeMetalDevice implements AutoCloseable {
     public record Diagnostics(long completed, long timed, long gpuTotalNs, long gpuMaxNs, long cpuWaitNs,
                               long bindingWrites, long bindingSkips, long activeSlots, long idleSlots,
                               long stagingBytes, long allocatorBytes, long heldReferences,
-                              long activeResidency, long idleResidency, long allocatorTrims, long upscaleBytes) {}
+                              long activeResidency, long idleResidency, long allocatorTrims, long upscaleBytes, long copyCommands, long copyPasses) {}
 
     /** Drains interval counters; memory values are current snapshots. Does not wait for GPU work. */
     public Diagnostics diagnostics() {
         checkOpen();
         try (Arena call = Arena.ofConfined()) {
-            var out = call.allocate(JAVA_LONG, 16);
+            var out = call.allocate(JAVA_LONG, 18);
             diagnosticsSnapshot.invokeExact(context, out);
             return new Diagnostics(out.getAtIndex(JAVA_LONG, 0), out.getAtIndex(JAVA_LONG, 1),
                     out.getAtIndex(JAVA_LONG, 2), out.getAtIndex(JAVA_LONG, 3), out.getAtIndex(JAVA_LONG, 4),
                     out.getAtIndex(JAVA_LONG, 5), out.getAtIndex(JAVA_LONG, 6), out.getAtIndex(JAVA_LONG, 7),
                     out.getAtIndex(JAVA_LONG, 8), out.getAtIndex(JAVA_LONG, 9), out.getAtIndex(JAVA_LONG, 10),
-                    out.getAtIndex(JAVA_LONG, 11), out.getAtIndex(JAVA_LONG, 12), out.getAtIndex(JAVA_LONG, 13), out.getAtIndex(JAVA_LONG, 14), out.getAtIndex(JAVA_LONG, 15));
+                    out.getAtIndex(JAVA_LONG, 11), out.getAtIndex(JAVA_LONG, 12), out.getAtIndex(JAVA_LONG, 13), out.getAtIndex(JAVA_LONG, 14), out.getAtIndex(JAVA_LONG, 15), out.getAtIndex(JAVA_LONG, 16), out.getAtIndex(JAVA_LONG, 17));
         } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal diagnostics", failure); }
     }
 
@@ -307,11 +309,10 @@ public final class NativeMetalDevice implements AutoCloseable {
     public void copyPass(Resource command, Resource fence, long[] words) {
         checkOpen(); command.checkResource(); fence.checkResource();
         if (command.owner() != this || fence.owner() != this || words.length != 16) throw new IllegalArgumentException("Invalid copy owner or payload");
-        try (Arena call = Arena.ofConfined()) {
-            var payload = call.allocateFrom(JAVA_LONG, words);
-            var error = call.allocate(4096);
-            int success = (int) copyPass.invokeExact(context, command.id, fence.id, payload, words.length, error, 4096);
-            if (success == 0) throw new IllegalStateException(error.getString(0));
+        for (int i = 0; i < 16; i++) copyWords.setAtIndex(JAVA_LONG, i, words[i]);
+        try {
+            int success = (int) copyPass.invokeExact(context, command.id, fence.id, copyWords, words.length, copyError, 4096);
+            if (success == 0) throw new IllegalStateException(copyError.getString(0));
         } catch (Throwable failure) { throw new IllegalStateException("Metal copy failed", failure); }
     }
 
