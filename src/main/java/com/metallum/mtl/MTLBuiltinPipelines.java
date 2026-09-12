@@ -243,39 +243,7 @@ public final class MTLBuiltinPipelines {
             final MemorySegment sourceTexture,
             final MTLFence globalFence
     ) {
-        try (AutoreleasePool _ = AutoreleasePool.push()) {
-            CAMetalDrawable drawable = layer.nextDrawable();
-            if (drawable == null) {
-                return;
-            }
-            MemorySegment drawableTexture = drawable.texture();
-
-            MTLRenderCommandEncoder encoder = commandBuffer.makeRenderCommandEncoder(
-                    drawableTexture, 0, null, MemorySegment.NULL, 0, null);
-
-            if (globalFence != null) {
-                encoder.waitForFence(globalFence, MTLRenderStages.Fragment);
-            }
-
-            long drawableWidth = MTLTexture.width(drawableTexture);
-            long drawableHeight = MTLTexture.height(drawableTexture);
-            encoder.setViewport(0.0, 0.0, drawableWidth, drawableHeight, 0.0, 1.0);
-            encoder.setRenderPipelineState(presentPipeline);
-            encoder.setFragmentTexture(sourceTexture, 0L);
-
-            boolean requiresScaling = MTLTexture.width(sourceTexture) != drawableWidth
-                    || MTLTexture.height(sourceTexture) != drawableHeight;
-            encoder.setFragmentSamplerState(requiresScaling ? presentLinearSampler : presentNearestSampler, 0L);
-
-            encoder.drawPrimitives(MTLPrimitiveType.Triangle, 0, 3, 1, 0);
-
-            if (globalFence != null) {
-                encoder.updateFence(globalFence, MTLRenderStages.Fragment);
-            }
-
-            encoder.endEncoding();
-            commandBuffer.presentDrawable(drawable);
-        }
+        commandBuffer.present(layer, sourceTexture, globalFence, presentPipeline, presentNearestSampler, presentLinearSampler);
     }
 
     private static void encodeClearDraw(

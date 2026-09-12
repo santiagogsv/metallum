@@ -17,7 +17,6 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 @Environment(EnvType.CLIENT)
 public final class MTLCommandBuffer {
 
-    private static final Msg PRESENT_DRAWABLE = Msg.ofVoid("presentDrawable:", ADDRESS);
     private static final Msg PUSH_DEBUG_GROUP = Msg.ofVoid("pushDebugGroup:", ADDRESS);
     private static final Msg POP_DEBUG_GROUP = Msg.ofVoid("popDebugGroup");
 
@@ -39,7 +38,7 @@ public final class MTLCommandBuffer {
             @Nullable Vector4fc clearColor, MemorySegment depth, int depthLoad, @Nullable Double clearDepth) {
         double[] clear = clearColor == null ? new double[]{0, 0, 0, 0, clearDepth == null ? 1 : clearDepth}
                 : new double[]{clearColor.x(), clearColor.y(), clearColor.z(), clearColor.w(), clearDepth == null ? 1 : clearDepth};
-        return new MTLRenderCommandEncoder(nativeDevice.createRenderPass(command, color, depth, colorLoad, depthLoad, clear));
+        return new MTLRenderCommandEncoder(nativeDevice, nativeDevice.createRenderPass(command, color, depth, colorLoad, depthLoad, clear));
     }
 
     public MTLRenderCommandEncoder makeRenderCommandEncoder(MemorySegment color, @Nullable Vector4fc clearColor,
@@ -79,8 +78,9 @@ public final class MTLCommandBuffer {
         MTLBuiltinPipelines.encodePresentTextureToDrawable(this, layer, sourceTexture, globalFence);
     }
 
-    void presentDrawable(final CAMetalDrawable drawable) {
-        PRESENT_DRAWABLE.send(handle(), drawable.handle());
+    void present(CAMetalLayer layer, MemorySegment source, MTLFence fence,
+                 MemorySegment pipeline, MemorySegment nearest, MemorySegment linear) {
+        nativeDevice.present(command, layer.owner(), source, fence == null ? null : fence.owner(), pipeline, nearest, linear);
     }
 
     public void commit() {

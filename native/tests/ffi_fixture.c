@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; uint64_t length; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 11
+#define TEST_ABI_VERSION 12
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -181,4 +181,28 @@ uint64_t metallum_render_pass_create(void *context, uint64_t command, void *colo
     if (!c || command >= 256 || !c->resources[command] || c->resources[command]->kind != 7 || (!color && !depth) || !clear || color_load > 2 || depth_load > 2) return 0;
     Resource *r = calloc(1, sizeof(Resource)); assert(r); r->kind = 9;
     return store_resource(c, r);
+}
+/* Test-only recording: validates the real Java draw adapter's ABI packing. */
+static int64_t last_render[11];
+void metallum_test_last_render(int64_t *out) { memcpy(out, last_render, sizeof(last_render)); }
+int32_t metallum_render_command(void *context, uint64_t pass, uint32_t op, void *p0, void *p1, const int64_t *words) {
+    Context *c = context;
+    if (!c || pass >= 256 || !c->resources[pass] || c->resources[pass]->kind != 9 || !words || op > 22) return 0;
+    last_render[0] = op; last_render[1] = (intptr_t)p0; last_render[2] = (intptr_t)p1;
+    memcpy(last_render + 3, words, 8 * sizeof(int64_t));
+    return 1;
+}
+uint64_t metallum_layer_create(void *context, double scale) {
+    if (!context || !(scale > 0)) return 0;
+    Resource *r = calloc(1, sizeof(Resource)); assert(r); r->kind = 10;
+    return store_resource(context, r);
+}
+int32_t metallum_layer_configure(void *context, uint64_t layer, double width, double height, uint32_t immediate) {
+    Context *c = context;
+    return c && layer < 256 && c->resources[layer] && c->resources[layer]->kind == 10 && width > 0 && height > 0 && immediate <= 1;
+}
+int32_t metallum_present(void *context, uint64_t command, uint64_t layer, void *source, uint64_t fence, void *pipeline, void *nearest, void *linear) {
+    Context *c = context;
+    return c && command < 256 && layer < 256 && c->resources[command] && c->resources[command]->kind == 7
+        && c->resources[layer] && c->resources[layer]->kind == 10 && source && pipeline && nearest && linear;
 }

@@ -14,8 +14,8 @@ vibecoded as hell
 
 ## Swift backend
 
-The current build is `0.0.24-swift.11`. Swift owns resource creation, shader compilation, render pipelines, copy passes and render-pass setup/lifetime. The matching native library is bundled in the jar and loaded automatically. No `metallum.nativeLibrary` JVM argument is needed; that property remains a development override only. The Java fallback has been removed.
+The current build is `0.0.24-swift.12`. Swift owns resource creation, shader compilation, render pipelines, copy passes, draw encoding, render-pass lifetime and presentation. The matching native library is bundled in the jar and loaded automatically. No `metallum.nativeLibrary` JVM argument is needed; that property remains a development override only. The Java fallback has been removed.
 
-See [Swift render-pass ownership and validation](docs/swift-render-passes.md), [memory diagnostics](docs/swift-memory.md), and [bundled-library installation](docs/swift-packaging.md). Run `./gradlew build checkNative` with JDK 25 and the Swift 6.4/macOS 27 SDK toolchain to build the jar and run GPU-independent checks.
+See [Swift drawing and presentation](docs/swift-draws-presentation.md), [memory diagnostics](docs/swift-memory.md), and [bundled-library installation](docs/swift-packaging.md). Run `./gradlew build checkNative` with JDK 25 and the Swift 6.4/macOS 27 SDK toolchain to build the jar and run GPU-independent checks.
 
-Java still adapts Minecraft/Blaze3D and controls command encoding and presentation during the incremental migration. See [the original architecture and migration plan](docs/swift-backend.md) for background.
+Java still adapts Minecraft/Blaze3D and schedules work during the incremental migration. Metal 4 command infrastructure and removal of the remaining borrowed-pointer boundary are still pending. See [the original architecture and migration plan](docs/swift-backend.md) for background.

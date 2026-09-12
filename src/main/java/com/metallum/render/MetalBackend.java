@@ -49,6 +49,7 @@ public class MetalBackend implements GpuBackend {
         }
         boolean transferred = false;
         CAMetalLayer metalLayer = null;
+        Cocoa cocoa = null;
         try {
             MTLDevice metalDevice = new MTLDevice(nativeOwner.borrowedDevice(), nativeOwner);
             if (metalDevice == null) {
@@ -58,7 +59,6 @@ public class MetalBackend implements GpuBackend {
             String deviceName = metalDevice.name();
             if (deviceName.isBlank()) deviceName = "<unknown Metal device>";
 
-            Cocoa cocoa;
             try {
                 cocoa = new Cocoa(
                         MemorySegment.ofAddress(GLFWNativeCocoa.glfwGetCocoaWindow(window)),
@@ -76,7 +76,7 @@ public class MetalBackend implements GpuBackend {
 
             cocoa.setViewLayer(metalLayer.handle());
 
-            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, "Swift resources + render pipelines, ABI 11");
+            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, "Swift resources, draw encoding and presentation, ABI 12");
 
             try {
                 MetalDevice backend = new MetalDevice(defaultShaderSource, debugOptions, metalDevice.handle(), metalLayer, deviceName, cocoa,
@@ -98,6 +98,9 @@ public class MetalBackend implements GpuBackend {
             }
         } finally {
             if (!transferred) {
+                if (cocoa != null) {
+                    try { cocoa.clearViewLayer(); } catch (Throwable ignored) { }
+                }
                 if (metalLayer != null) metalLayer.close();
                 nativeOwner.close();
             }

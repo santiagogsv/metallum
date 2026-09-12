@@ -83,6 +83,15 @@ int32_t metallum_copy_pass(void *context, uint64_t command, uint64_t fence, cons
  * Returns an owned pass ID; resource_borrow_mtl borrows its encoder.
  * Destroying the pass ends encoding exactly once. End before command submission. */
 uint64_t metallum_render_pass_create(void *context, uint64_t command, void *color, void *depth, uint32_t color_load, uint32_t depth_load, const double *clear);
+/* ABI 12: synchronous render-thread operations. words has eight int64_t slots;
+ * floating-point slots use the IEEE double bit pattern. Pointers are borrowed
+ * Metal objects (except raw vertex bytes), valid through the call. See MetalDraws.swift.
+ * Returns 1 on success, 0 for invalid IDs/opcodes/arguments. */
+int32_t metallum_render_command(void *context, uint64_t pass, uint32_t op, void *p0, void *p1, const int64_t *words);
+uint64_t metallum_layer_create(void *context, double scale);
+int32_t metallum_layer_configure(void *context, uint64_t layer, double width, double height, uint32_t immediate);
+/* Acquires and presents the drawable entirely in Swift. No available drawable is a successful skipped frame. */
+int32_t metallum_present(void *context, uint64_t command, uint64_t layer, void *source, uint64_t fence, void *pipeline, void *nearest, void *linear);
 #ifdef __cplusplus
 }
 #endif

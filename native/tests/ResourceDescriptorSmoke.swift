@@ -15,6 +15,10 @@ struct ResourceDescriptorSmoke {
         precondition(RenderPassPolicy.descriptor(colorLoad: 3, depthLoad: 1, clear: [0,0,0,0,1]) == nil)
         precondition(RenderPassPolicy.descriptor(colorLoad: 1, depthLoad: 1, clear: []) == nil)
         precondition(metallumRenderPassCreate(nil, 0, nil, nil, 1, 1, nil) == 0)
+        precondition(metallumRenderCommand(nil, 0, 0, nil, nil, nil) == 0)
+        precondition(metallumLayerCreate(nil, 1) == 0)
+        precondition(metallumLayerConfigure(nil, 0, 8, 8, 0) == 0)
+        precondition(metallumPresent(nil, 0, 0, nil, 0, nil, nil, nil) == 0)
         let shapes: [(UInt32, UInt32, MTLTextureType, Int)] = [
             (1, 0, .type2D, 1), (3, 0, .type2DArray, 3), (6, 1, .typeCube, 1), (12, 1, .typeCubeArray, 2)
         ]

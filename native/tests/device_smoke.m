@@ -9,7 +9,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 11);
+        assert(metallum_abi_version() == 12);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -103,6 +103,30 @@ int main(void) {
             id<MTLRenderPipelineState> state = (__bridge id<MTLRenderPipelineState>)metallum_resource_borrow_mtl(context, pipeline);
             assert(state && state.device == device);
             state = nil;
+            // Exercise Swift draw dispatch against the real SDK/GPU when available.
+            uint64_t draw_texture = metallum_texture_create(context, MTLPixelFormatRGBA8Unorm, 8, 8, 1, 1, 0, 1, NULL);
+            uint64_t draw_command = metallum_command_buffer_create(context, "Swift draw smoke");
+            double draw_clear[] = {0, 0, 0, 1, 1};
+            uint64_t draw_pass = metallum_render_pass_create(context, draw_command, metallum_resource_borrow_mtl(context, draw_texture), NULL, 2, 0, draw_clear);
+            int64_t draw_words[8] = {0};
+            assert(metallum_render_command(context, draw_pass, 0, metallum_resource_borrow_mtl(context, pipeline), NULL, draw_words) == 1);
+            double viewport_words[8] = {0, 0, 8, 8, 0, 1, 0, 0};
+            memcpy(draw_words, viewport_words, sizeof(draw_words));
+            assert(metallum_render_command(context, draw_pass, 15, NULL, NULL, draw_words) == 1);
+            int64_t triangle_words[8] = {MTLPrimitiveTypeTriangle, 0, 3, 1, 0, 0, 0, 0};
+            assert(metallum_render_command(context, draw_pass, 17, NULL, NULL, triangle_words) == 1);
+            assert(metallum_render_command(context, draw_pass, 99, NULL, NULL, triangle_words) == 0);
+            metallum_resource_destroy(context, draw_pass);
+            assert(metallum_render_command(context, draw_pass, 17, NULL, NULL, triangle_words) == 0);
+            uint64_t draw_submission = metallum_submit(context, draw_command);
+            assert(draw_submission && metallum_submission_wait(context, draw_submission, 5000, shader_error, sizeof(shader_error)) == 1);
+            metallum_resource_destroy(context, draw_submission);
+            metallum_resource_destroy(context, draw_command);
+            metallum_resource_destroy(context, draw_texture);
+            uint64_t layer = metallum_layer_create(context, 2);
+            assert(layer && metallum_layer_configure(context, layer, 1708, 960, 0) == 1);
+            assert(metallum_layer_configure(context, layer, 0, 960, 0) == 0);
+            metallum_resource_destroy(context, layer);
             metallum_resource_destroy(context, pipeline);
             uint64_t depth = metallum_depth_state_create(context, MTLCompareFunctionLessEqual, 1);
             assert(depth && metallum_resource_borrow_mtl(context, depth));

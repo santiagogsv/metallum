@@ -21,7 +21,9 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
-    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate;
+    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, layerCreate, layerConfigure, present;
+    // Reused only on the confined render thread; calls consume the words synchronously.
+    private final MemorySegment drawWords = arena.allocate(64, 8);
     private final MemorySegment borrowedDevice;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
@@ -32,7 +34,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 11) throw new IllegalStateException("Expected Metallum native ABI 11, found " + abiVersion);
+            if (abiVersion != 12) throw new IllegalStateException("Expected Metallum native ABI 12, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             MethodHandle borrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -61,6 +63,10 @@ public final class NativeMetalDevice implements AutoCloseable {
             submissionWait = linker.downcallHandle(symbols.findOrThrow("metallum_submission_wait"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT));
             commandCreate = linker.downcallHandle(symbols.findOrThrow("metallum_command_buffer_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS));
             fenceCreate = linker.downcallHandle(symbols.findOrThrow("metallum_fence_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS));
+            layerCreate = linker.downcallHandle(symbols.findOrThrow("metallum_layer_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_DOUBLE));
+            layerConfigure = linker.downcallHandle(symbols.findOrThrow("metallum_layer_configure"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_DOUBLE, JAVA_DOUBLE, JAVA_INT));
+            present = linker.downcallHandle(symbols.findOrThrow("metallum_present"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS, ADDRESS));
+            renderCommand = linker.downcallHandle(symbols.findOrThrow("metallum_render_command"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
             renderPassCreate = linker.downcallHandle(symbols.findOrThrow("metallum_render_pass_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, ADDRESS));
             copyPass = linker.downcallHandle(symbols.findOrThrow("metallum_copy_pass"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT, ADDRESS, JAVA_INT));
             context = (MemorySegment) create.invokeExact();
@@ -166,6 +172,42 @@ public final class NativeMetalDevice implements AutoCloseable {
             return new MemoryStats(output.getAtIndex(JAVA_LONG, 0), output.getAtIndex(JAVA_LONG, 1),
                     output.getAtIndex(JAVA_LONG, 2), output.getAtIndex(JAVA_LONG, 3), output.getAtIndex(JAVA_LONG, 4));
         } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal memory", failure); }
+    }
+
+    public Resource createLayer(double scale) {
+        checkOpen();
+        try { return ownResource((long) layerCreate.invokeExact(context, scale)); }
+        catch (Throwable failure) { throw new IllegalStateException("Cannot create Metal layer", failure); }
+    }
+
+    public void configureLayer(Resource layer, double width, double height, boolean immediate) {
+        long id = layer.id(this);
+        try {
+            if ((int) layerConfigure.invokeExact(context, id, width, height, immediate ? 1 : 0) != 1)
+                throw new IllegalArgumentException("Invalid Metal layer configuration");
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot configure Metal layer", failure); }
+    }
+
+    public void present(Resource command, Resource layer, MemorySegment source, Resource fence,
+                        MemorySegment pipeline, MemorySegment nearest, MemorySegment linear) {
+        long commandID = command.id(this), layerID = layer.id(this), fenceID = fence == null ? 0 : fence.id(this);
+        try {
+            if ((int) present.invokeExact(context, commandID, layerID, source, fenceID, pipeline, nearest, linear) != 1)
+                throw new IllegalStateException("Metal presentation rejected");
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot present Metal frame", failure); }
+    }
+
+    public void renderCommand(Resource pass, int op, MemorySegment p0, MemorySegment p1,
+                              long a, long b, long c, long d, long e, long f, long g, long h) {
+        long id = pass.id(this);
+        drawWords.setAtIndex(JAVA_LONG, 0, a); drawWords.setAtIndex(JAVA_LONG, 1, b);
+        drawWords.setAtIndex(JAVA_LONG, 2, c); drawWords.setAtIndex(JAVA_LONG, 3, d);
+        drawWords.setAtIndex(JAVA_LONG, 4, e); drawWords.setAtIndex(JAVA_LONG, 5, f);
+        drawWords.setAtIndex(JAVA_LONG, 6, g); drawWords.setAtIndex(JAVA_LONG, 7, h);
+        try {
+            if ((int) renderCommand.invokeExact(context, id, op, p0, p1, drawWords) != 1)
+                throw new IllegalArgumentException("Rejected Metal render operation " + op);
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot encode Metal render operation " + op, failure); }
     }
 
     public Resource createRenderPass(Resource command, MemorySegment color, MemorySegment depth,

@@ -1,128 +1,99 @@
 package com.metallum.mtl;
 
 import com.metallum.nativebridge.NativeMetalDevice;
-import com.metallum.objc.Msg;
 import com.metallum.objc.ObjC;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import org.joml.Vector4fc;
 import org.jspecify.annotations.Nullable;
-import org.lwjgl.system.MemoryStack;
 
 import java.lang.foreign.MemorySegment;
 
-import static java.lang.foreign.ValueLayout.*;
 
 @Environment(EnvType.CLIENT)
 public final class MTLRenderCommandEncoder extends MTLCommandEncoder {
-    private static final Msg SET_RENDER_PIPELINE_STATE = Msg.ofVoid("setRenderPipelineState:", ADDRESS);
-    private static final Msg SET_DEPTH_STENCIL_STATE = Msg.ofVoid("setDepthStencilState:", ADDRESS);
-    private static final Msg SET_DEPTH_BIAS = Msg.ofVoid("setDepthBias:slopeScale:clamp:", JAVA_FLOAT, JAVA_FLOAT, JAVA_FLOAT);
-    private static final Msg SET_FRONT_FACING_WINDING = Msg.ofVoid("setFrontFacingWinding:", JAVA_LONG);
-    private static final Msg SET_CULL_MODE = Msg.ofVoid("setCullMode:", JAVA_LONG);
-    private static final Msg SET_TRIANGLE_FILL_MODE = Msg.ofVoid("setTriangleFillMode:", JAVA_LONG);
-    private static final Msg SET_VERTEX_BUFFER = Msg.ofVoid("setVertexBuffer:offset:atIndex:", ADDRESS, JAVA_LONG, JAVA_LONG);
-    private static final Msg SET_FRAGMENT_BUFFER = Msg.ofVoid("setFragmentBuffer:offset:atIndex:", ADDRESS, JAVA_LONG, JAVA_LONG);
-    private static final Msg SET_VERTEX_BUFFER_OFFSET = Msg.ofVoid("setVertexBufferOffset:atIndex:", JAVA_LONG, JAVA_LONG);
-    private static final Msg SET_FRAGMENT_BUFFER_OFFSET = Msg.ofVoid("setFragmentBufferOffset:atIndex:", JAVA_LONG, JAVA_LONG);
-    private static final Msg SET_VERTEX_TEXTURE = Msg.ofVoid("setVertexTexture:atIndex:", ADDRESS, JAVA_LONG);
-    private static final Msg SET_FRAGMENT_TEXTURE = Msg.ofVoid("setFragmentTexture:atIndex:", ADDRESS, JAVA_LONG);
-    private static final Msg SET_VERTEX_SAMPLER = Msg.ofVoid("setVertexSamplerState:atIndex:", ADDRESS, JAVA_LONG);
-    private static final Msg SET_FRAGMENT_SAMPLER = Msg.ofVoid("setFragmentSamplerState:atIndex:", ADDRESS, JAVA_LONG);
-    private static final Msg SET_SCISSOR_RECT = Msg.ofVoid("setScissorRect:", ADDRESS);
-    private static final Msg SET_VIEWPORT = Msg.ofVoid("setViewport:", ADDRESS);
-    private static final Msg SET_VERTEX_BYTES = Msg.ofVoid("setVertexBytes:length:atIndex:", ADDRESS, JAVA_LONG, JAVA_LONG);
-    private static final Msg DRAW_PRIMITIVES = Msg.ofVoid("drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:",
-            JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG);
-    private static final Msg DRAW_INDEXED = Msg.ofVoid("drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:instanceCount:baseVertex:baseInstance:",
-            JAVA_LONG, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG);
-    private static final Msg DRAW_INDEXED_INDIRECT = Msg.ofVoid("drawIndexedPrimitives:indexType:indexBuffer:indexBufferOffset:indirectBuffer:indirectBufferOffset:",
-            JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, JAVA_LONG);
-    private static final Msg DRAW_INDIRECT = Msg.ofVoid("drawPrimitives:indirectBuffer:indirectBufferOffset:", JAVA_LONG, ADDRESS, JAVA_LONG);
-    private static final Msg UPDATE_FENCE = Msg.ofVoid("updateFence:afterStages:", ADDRESS, JAVA_LONG);
-    private static final Msg WAIT_FOR_FENCE = Msg.ofVoid("waitForFence:beforeStages:", ADDRESS, JAVA_LONG);
+    private final NativeMetalDevice device;
+    private final NativeMetalDevice.Resource pass;
 
-    MTLRenderCommandEncoder(final NativeMetalDevice.Resource handle) {
-        super(handle);
+    MTLRenderCommandEncoder(NativeMetalDevice device, NativeMetalDevice.Resource pass) {
+        super(pass);
+        this.device = device;
+        this.pass = pass;
     }
 
+    private void command(int op, MemorySegment p0, MemorySegment p1,
+                         long a, long b, long c, long d, long e, long f, long g, long h) {
+        device.renderCommand(pass, op, p0, p1, a, b, c, d, e, f, g, h);
+    }
+
+    private static long bits(double value) { return Double.doubleToRawLongBits(value); }
+
     public void setRenderPipelineState(final MemorySegment pipeline) {
-        SET_RENDER_PIPELINE_STATE.send(handle(), ObjC.orNil(pipeline));
+        command(0, ObjC.orNil(pipeline), MemorySegment.NULL, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setDepthStencilState(final MemorySegment depthStencilState) {
-        SET_DEPTH_STENCIL_STATE.send(handle(), ObjC.orNil(depthStencilState));
+        command(1, ObjC.orNil(depthStencilState), MemorySegment.NULL, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setDepthBias(final float depthBias, final float slopeScale, final float clamp) {
-        SET_DEPTH_BIAS.send(handle(), depthBias, slopeScale, clamp);
+        command(2, MemorySegment.NULL, MemorySegment.NULL, bits(depthBias), bits(slopeScale), bits(clamp), 0, 0, 0, 0, 0);
     }
 
     public void setFrontFacingWinding(final MTLWinding winding) {
-        SET_FRONT_FACING_WINDING.send(handle(), winding.value);
+        command(3, MemorySegment.NULL, MemorySegment.NULL, winding.value, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setCullMode(final MTLCullMode cullMode) {
-        SET_CULL_MODE.send(handle(), cullMode.value);
+        command(4, MemorySegment.NULL, MemorySegment.NULL, cullMode.value, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setTriangleFillMode(final MTLTriangleFillMode fillMode) {
-        SET_TRIANGLE_FILL_MODE.send(handle(), fillMode.value);
+        command(5, MemorySegment.NULL, MemorySegment.NULL, fillMode.value, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setVertexBuffer(final MTLBuffer buffer, final long offset, final long index) {
-        SET_VERTEX_BUFFER.send(handle(), seg(buffer), offset, index);
+        command(6, seg(buffer), MemorySegment.NULL, offset, index, 0, 0, 0, 0, 0, 0);
     }
 
     public void setFragmentBuffer(final MTLBuffer buffer, final long offset, final long index) {
-        SET_FRAGMENT_BUFFER.send(handle(), seg(buffer), offset, index);
+        command(7, seg(buffer), MemorySegment.NULL, offset, index, 0, 0, 0, 0, 0, 0);
     }
 
     public void setVertexBufferOffset(final long offset, final long index) {
-        SET_VERTEX_BUFFER_OFFSET.send(handle(), offset, index);
+        command(8, MemorySegment.NULL, MemorySegment.NULL, offset, index, 0, 0, 0, 0, 0, 0);
     }
 
     public void setFragmentBufferOffset(final long offset, final long index) {
-        SET_FRAGMENT_BUFFER_OFFSET.send(handle(), offset, index);
+        command(9, MemorySegment.NULL, MemorySegment.NULL, offset, index, 0, 0, 0, 0, 0, 0);
     }
 
     public void setVertexTexture(final MemorySegment texture, final long index) {
-        SET_VERTEX_TEXTURE.send(handle(), ObjC.orNil(texture), index);
+        command(10, ObjC.orNil(texture), MemorySegment.NULL, index, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setFragmentTexture(final MemorySegment texture, final long index) {
-        SET_FRAGMENT_TEXTURE.send(handle(), ObjC.orNil(texture), index);
+        command(11, ObjC.orNil(texture), MemorySegment.NULL, index, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setVertexSamplerState(final MemorySegment sampler, final long index) {
-        SET_VERTEX_SAMPLER.send(handle(), ObjC.orNil(sampler), index);
+        command(12, ObjC.orNil(sampler), MemorySegment.NULL, index, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setFragmentSamplerState(final MemorySegment sampler, final long index) {
-        SET_FRAGMENT_SAMPLER.send(handle(), ObjC.orNil(sampler), index);
+        command(13, ObjC.orNil(sampler), MemorySegment.NULL, index, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setScissorRect(final long x, final long y, final long width, final long height) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            SET_SCISSOR_RECT.send(handle(), MTLScissorRect.on(stack, x, y, width, height));
-        }
+        command(14, MemorySegment.NULL, MemorySegment.NULL, x, y, width, height, 0, 0, 0, 0);
     }
 
     public void setViewport(final double originX, final double originY, final double width, final double height, final double znear, final double zfar) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            MemorySegment viewport = MemorySegment.ofAddress(stack.nmalloc(8, 48)).reinterpret(48);
-            viewport.set(JAVA_DOUBLE, 0, originX);
-            viewport.set(JAVA_DOUBLE, 8, originY);
-            viewport.set(JAVA_DOUBLE, 16, width);
-            viewport.set(JAVA_DOUBLE, 24, height);
-            viewport.set(JAVA_DOUBLE, 32, znear);
-            viewport.set(JAVA_DOUBLE, 40, zfar);
-            SET_VIEWPORT.send(handle(), viewport);
-        }
+        command(15, MemorySegment.NULL, MemorySegment.NULL, bits(originX), bits(originY), bits(width), bits(height), bits(znear), bits(zfar), 0, 0);
     }
 
     public void setVertexBytes(final MemorySegment bytes, final long length, final long index) {
-        SET_VERTEX_BYTES.send(handle(), bytes, length, index);
+        command(16, bytes, MemorySegment.NULL, length, index, 0, 0, 0, 0, 0, 0);
     }
 
     public void clearDraw(
@@ -145,27 +116,27 @@ public final class MTLRenderCommandEncoder extends MTLCommandEncoder {
     }
 
     public void drawPrimitives(final MTLPrimitiveType primitiveType, final int firstVertex, final int vertexCount, final int instanceCount, final int baseInstance) {
-        DRAW_PRIMITIVES.send(handle(), primitiveType.value, firstVertex, vertexCount, instanceCount, baseInstance);
+        command(17, MemorySegment.NULL, MemorySegment.NULL, primitiveType.value, firstVertex, vertexCount, instanceCount, baseInstance, 0, 0, 0);
     }
 
     public void drawIndexedPrimitives(final MTLPrimitiveType primitiveType, final int indexCount, final MTLIndexType indexType, final MTLBuffer indexBuffer, final long offset, final int instanceCount, final int baseVertex, final int baseInstance) {
-        DRAW_INDEXED.send(handle(), primitiveType.value, indexCount, indexType.value, indexBuffer.handle(), offset, instanceCount, baseVertex, baseInstance);
+        command(18, indexBuffer.handle(), MemorySegment.NULL, primitiveType.value, indexCount, indexType.value, offset, instanceCount, baseVertex, baseInstance, 0);
     }
 
     public void drawIndexedPrimitivesIndirect(final MTLPrimitiveType primitiveType, final MTLIndexType indexType, final MTLBuffer indexBuffer, final MTLBuffer indirectBuffer, final long indirectBufferOffset) {
-        DRAW_INDEXED_INDIRECT.send(handle(), primitiveType.value, indexType.value, indexBuffer.handle(), 0L, indirectBuffer.handle(), indirectBufferOffset);
+        command(19, indexBuffer.handle(), indirectBuffer.handle(), primitiveType.value, indexType.value, indirectBufferOffset, 0, 0, 0, 0, 0);
     }
 
     public void drawPrimitivesIndirect(final MTLPrimitiveType primitiveType, final MTLBuffer indirectBuffer, final long indirectBufferOffset) {
-        DRAW_INDIRECT.send(handle(), primitiveType.value, indirectBuffer.handle(), indirectBufferOffset);
+        command(20, indirectBuffer.handle(), MemorySegment.NULL, primitiveType.value, indirectBufferOffset, 0, 0, 0, 0, 0, 0);
     }
 
     public void updateFence(final MTLFence fence, final MTLRenderStages stages) {
-        UPDATE_FENCE.send(handle(), fence.handle(), stages.value);
+        command(21, fence.handle(), MemorySegment.NULL, stages.value, 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void waitForFence(final MTLFence fence, final MTLRenderStages stages) {
-        WAIT_FOR_FENCE.send(handle(), fence.handle(), stages.value);
+        command(22, fence.handle(), MemorySegment.NULL, stages.value, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private static MemorySegment seg(final MTLBuffer buffer) {
