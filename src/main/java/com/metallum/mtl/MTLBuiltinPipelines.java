@@ -1,6 +1,8 @@
 package com.metallum.mtl;
 
 import com.metallum.objc.AutoreleasePool;
+import com.metallum.nativebridge.NativeMetalDevice;
+import com.metallum.nativebridge.NativePipelineDescriptor;
 import com.metallum.objc.ObjC;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -10,6 +12,7 @@ import org.lwjgl.system.MemoryStack;
 
 import java.lang.foreign.MemorySegment;
 import java.util.HashMap;
+import java.util.ArrayDeque;
 import java.util.Map;
 
 import static java.lang.foreign.ValueLayout.JAVA_FLOAT;
@@ -92,6 +95,7 @@ public final class MTLBuiltinPipelines {
             """;
 
     private static MTLDevice device;
+    private static final Map<Long, ArrayDeque<NativeMetalDevice.Resource>> nativePipelines = new HashMap<>();
     private static MemorySegment presentPipeline = MemorySegment.NULL;
     private static MemorySegment presentLinearSampler = MemorySegment.NULL;
     private static MemorySegment presentNearestSampler = MemorySegment.NULL;
@@ -114,7 +118,7 @@ public final class MTLBuiltinPipelines {
 
     public static void close() {
         if (!ObjC.isNil(presentPipeline)) {
-            ObjC.release(presentPipeline);
+            releasePipeline(presentPipeline);
             presentPipeline = MemorySegment.NULL;
         }
         if (!ObjC.isNil(presentLinearSampler)) {
@@ -125,7 +129,7 @@ public final class MTLBuiltinPipelines {
             ObjC.release(presentNearestSampler);
             presentNearestSampler = MemorySegment.NULL;
         }
-        clearPipelines.values().forEach(ObjC::release);
+        clearPipelines.values().forEach(MTLBuiltinPipelines::releasePipeline);
         clearPipelines.clear();
         depthStencilStates.values().forEach(ObjC::release);
         depthStencilStates.clear();
@@ -381,6 +385,14 @@ public final class MTLBuiltinPipelines {
         try (MTLFunction vertex = device.newFunction(mslSource, vertexEntry);
              MTLFunction fragment = device.newFunction(mslSource, fragmentEntry)) {
             if (ObjC.isNil(vertex.handle()) || ObjC.isNil(fragment.handle())) return MemorySegment.NULL;
+            if (device.nativeOwner() != null) {
+                var state = device.nativeOwner().createPipeline(vertex.nativeResource(), fragment.nativeResource(),
+                        new NativePipelineDescriptor(colorFormat, depthFormat, MTLPixelFormat.Invalid.value, writeMask));
+                MemorySegment handle = state.borrowedHandle();
+                // Metal may share an identical state object; retain each independent resource ID.
+                nativePipelines.computeIfAbsent(handle.address(), ignored -> new ArrayDeque<>()).addLast(state);
+                return handle;
+            }
             try (MTLRenderPipelineDescriptor descriptor = new MTLRenderPipelineDescriptor()) {
                 descriptor.setCompiledFunctions(vertex.handle(), fragment.handle());
                 descriptor.setColorAttachmentFormat(0, colorFormat);
@@ -389,6 +401,13 @@ public final class MTLBuiltinPipelines {
                 return device.newRenderPipelineState(descriptor);
             }
         }
+    }
+
+    private static void releasePipeline(MemorySegment handle) {
+        var owners = nativePipelines.get(handle.address());
+        if (owners == null) { ObjC.release(handle); return; }
+        owners.removeFirst().close();
+        if (owners.isEmpty()) nativePipelines.remove(handle.address());
     }
 
     private static MemorySegment buildPresentSampler(final MTLSamplerMinMagFilter filter) {

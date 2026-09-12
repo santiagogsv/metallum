@@ -48,6 +48,30 @@ struct ResourceDescriptorSmoke {
             precondition(metallumFunctionCreate(nil, nil, nil, buffer.baseAddress, 8) == 0)
             precondition(buffer[0] != 0 && buffer[7] == 0)
         }
+        let basic: [UInt64] = [70, 252, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let simple = try! PipelineDescriptors.make(basic)
+        precondition(simple.depthAttachmentPixelFormat == .depth32Float)
+        if let vertex = simple.vertexDescriptor { precondition(vertex.attributes[0].format == .invalid) }
+        precondition(simple.colorAttachments[0].pixelFormat == .rgba8Unorm)
+        var packed = basic
+        packed[4] = 1; packed[5] = 4; packed[6] = 5; packed[8] = 1; packed[9] = 5
+        packed[11] = 1; packed[12] = 1
+        packed += [0, UInt64(MTLVertexFormat.float3.rawValue), 4, 7, 7, 16, UInt64(MTLVertexStepFunction.perInstance.rawValue), 2]
+        let pipeline = try! PipelineDescriptors.make(packed)
+        precondition(pipeline.colorAttachments[0].isBlendingEnabled)
+        precondition(pipeline.colorAttachments[0].sourceRGBBlendFactor == .sourceAlpha)
+        precondition(pipeline.vertexDescriptor!.attributes[0].bufferIndex == 7)
+        precondition(pipeline.vertexDescriptor!.attributes[0].offset == 4)
+        precondition(pipeline.vertexDescriptor!.layouts[7].stride == 16)
+        precondition(pipeline.vertexDescriptor!.layouts[7].stepFunction == .perInstance)
+        precondition(pipeline.vertexDescriptor!.layouts[7].stepRate == 2)
+        var missingLayout = packed; missingLayout[17] = 8
+        var badIndex = packed; badIndex[13] = 31
+        var duplicate = packed; duplicate[11] = 2; duplicate.insert(contentsOf: Array(packed[13..<17]), at: 17)
+        for invalid in [[], Array(basic.dropLast()), missingLayout, badIndex, duplicate] {
+            do { _ = try PipelineDescriptors.make(invalid); fatalError("Invalid pipeline accepted") }
+            catch { }
+        }
         print("Swift Metal descriptor compatibility tests passed (no GPU required)")
     }
 }

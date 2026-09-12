@@ -9,6 +9,6 @@ xcrun clang -fobjc-arc -I native/include native/tests/device_smoke.m \
     -Wl,-rpath,"$PWD/build/native" -o build/native/device_smoke
 build/native/device_smoke
 "$javac_bin" --release 25 -d build/native/test-classes \
-    src/main/java/com/metallum/nativebridge/NativeMetalDevice.java native/tests/NativeDeviceSmoke.java
+    src/main/java/com/metallum/nativebridge/NativeMetalDevice.java src/main/java/com/metallum/nativebridge/NativePipelineDescriptor.java native/tests/NativeDeviceSmoke.java
 "$java_bin" --enable-native-access=ALL-UNNAMED -cp build/native/test-classes \
     NativeDeviceSmoke "$PWD/build/native/libmetallum_native.dylib"

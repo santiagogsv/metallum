@@ -8,7 +8,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 4);
+        assert(metallum_abi_version() == 5);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -89,6 +89,20 @@ int main(void) {
             assert(shader_error[0] != 0);
             assert(metallum_function_create(context, "invalid", "first", shader_error, sizeof(shader_error)) == 0);
             assert(shader_error[0] != 0);
+            const char *render_msl = "#include <metal_stdlib>\nusing namespace metal; vertex float4 vs(uint id [[vertex_id]]) { return float4(0,0,0,1); } fragment float4 fs() { return float4(1); }";
+            uint64_t vs = metallum_function_create(context, render_msl, "vs", shader_error, sizeof(shader_error));
+            uint64_t fs = metallum_function_create(context, render_msl, "fs", shader_error, sizeof(shader_error));
+            uint64_t description[] = {70, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+            uint64_t pipeline = metallum_pipeline_create(context, vs, fs, description, 13, shader_error, sizeof(shader_error));
+            assert(pipeline && shader_error[0] == 0);
+            assert(metallum_pipeline_create(context, fs, vs, description, 13, shader_error, sizeof(shader_error)) == 0);
+            assert(shader_error[0] != 0);
+            metallum_resource_destroy(context, vs); metallum_resource_destroy(context, fs);
+            metallum_shader_libraries_clear(context);
+            id<MTLRenderPipelineState> state = (__bridge id<MTLRenderPipelineState>)metallum_resource_borrow_mtl(context, pipeline);
+            assert(state && state.device == device);
+            state = nil;
+            metallum_resource_destroy(context, pipeline);
             // Device teardown owns this sampler as well as the private buffer.
             // Leave the private buffer alive to exercise device-owned cleanup.
             if (i == 0) printf("Native device: %s\n", device.name.UTF8String);

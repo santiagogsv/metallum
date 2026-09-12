@@ -1,4 +1,5 @@
 import com.metallum.nativebridge.NativeMetalDevice;
+import com.metallum.nativebridge.NativePipelineDescriptor;
 import java.nio.file.Path;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.atomic.AtomicReference;
@@ -21,6 +22,20 @@ public final class NativeDeviceSmoke {
                 }
                 try { device.compileFunction("invalid", "first"); throw new AssertionError("Invalid source accepted"); }
                 catch (IllegalStateException expected) { }
+                String renderShader = "#include <metal_stdlib>\nusing namespace metal; vertex float4 vs(uint id [[vertex_id]]) { return float4(0,0,0,1); } fragment float4 fs() { return float4(1); }";
+                var vertex = device.compileFunction(renderShader, "vs");
+                var fragment = device.compileFunction(renderShader, "fs");
+                var description = new NativePipelineDescriptor(70, 0, 0, 15);
+                try (var other = new NativeMetalDevice(library); var foreign = other.compileFunction(renderShader, "vs")) {
+                    try { device.createPipeline(foreign, fragment, description); throw new AssertionError("Cross-device function accepted"); }
+                    catch (IllegalArgumentException expected) { }
+                }
+                var pipeline = device.createPipeline(vertex, fragment, description);
+                vertex.close(); fragment.close(); device.clearShaderLibraries();
+                if (pipeline.borrowedHandle().address() == 0) throw new AssertionError("Pipeline lost after function close");
+                try { device.createPipeline(vertex, fragment, description); throw new AssertionError("Closed function accepted"); }
+                catch (IllegalStateException expected) { }
+                pipeline.close(); pipeline.close();
                 NativeMetalDevice.Resource texture = device.createTexture(70, 8, 8, 2, 4, false, true, "Texture test é");
                 try (var fullView = texture.createView(0, 4); var partialView = texture.createView(1, 2);
                      var sampler = device.createSampler(true, false, true, false, 16, 8.5)) {
@@ -98,7 +113,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 4")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 5")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

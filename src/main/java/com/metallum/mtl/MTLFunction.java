@@ -18,6 +18,12 @@ public final class MTLFunction implements AutoCloseable {
         return nativeOwner == null ? handle : nativeOwner.borrowedHandle();
     }
 
+    public NativeMetalDevice.Resource nativeResource() {
+        handle();
+        if (nativeOwner == null) throw new IllegalStateException("Function is not Swift-owned");
+        return nativeOwner;
+    }
+
     @Override
     public void close() {
         if (closed) return;

@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 4
+#define TEST_ABI_VERSION 5
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -106,3 +106,15 @@ uint64_t metallum_function_create(void *context, const char *source, const char 
     return store_resource(context, r);
 }
 void metallum_shader_libraries_clear(void *context) { (void)context; }
+
+uint64_t metallum_pipeline_create(void *context, uint64_t vertex, uint64_t fragment,
+                                  const uint64_t *words, uint32_t count, char *error, uint32_t capacity) {
+    Context *c = context;
+    if (error && capacity) error[0] = 0;
+    if (!c || vertex >= 256 || fragment >= 256 || !c->resources[vertex] || !c->resources[fragment]
+        || c->resources[vertex]->kind != 3 || c->resources[fragment]->kind != 3
+        || !words || count < 13 || count != 13 + 4 * (words[11] + words[12])) return 0;
+    Resource *r = calloc(1, sizeof(Resource));
+    assert(r); r->kind = 4;
+    return store_resource(c, r);
+}

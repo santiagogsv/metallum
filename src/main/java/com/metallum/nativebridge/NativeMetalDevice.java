@@ -20,7 +20,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle destroy;
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
-    private final MethodHandle functionCreate, shaderLibrariesClear;
+    private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
     private final MemorySegment borrowedDevice;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
@@ -31,7 +31,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 4) throw new IllegalStateException("Expected Metallum native ABI 4, found " + abiVersion);
+            if (abiVersion != 5) throw new IllegalStateException("Expected Metallum native ABI 5, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             MethodHandle borrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -50,6 +50,8 @@ public final class NativeMetalDevice implements AutoCloseable {
             functionCreate = linker.downcallHandle(symbols.findOrThrow("metallum_function_create"), FunctionDescriptor.of(JAVA_LONG,
                     ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
             shaderLibrariesClear = linker.downcallHandle(symbols.findOrThrow("metallum_shader_libraries_clear"), FunctionDescriptor.ofVoid(ADDRESS));
+            pipelineCreate = linker.downcallHandle(symbols.findOrThrow("metallum_pipeline_create"), FunctionDescriptor.of(JAVA_LONG,
+                    ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT, ADDRESS, JAVA_INT));
             context = (MemorySegment) create.invokeExact();
             if (context.address() == 0) throw new IllegalStateException("Swift could not create a Metal device");
             try {
@@ -143,6 +145,20 @@ public final class NativeMetalDevice implements AutoCloseable {
         catch (Throwable failure) { throw new IllegalStateException("Cannot clear Swift shader libraries", failure); }
     }
 
+    public Resource createPipeline(Resource vertex, Resource fragment, NativePipelineDescriptor descriptor) {
+        checkOpen();
+        vertex.checkResource(); fragment.checkResource();
+        if (vertex.owner() != this || fragment.owner() != this) throw new IllegalArgumentException("Shader belongs to another device");
+        long[] words = descriptor.words();
+        try (Arena call = Arena.ofConfined()) {
+            MemorySegment payload = call.allocateFrom(JAVA_LONG, words);
+            MemorySegment error = call.allocate(4096);
+            long id = (long) pipelineCreate.invokeExact(context, vertex.id, fragment.id, payload, words.length, error, 4096);
+            if (id == 0) throw new IllegalStateException("Metal pipeline compilation failed: " + error.getString(0));
+            return ownResource(id);
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot create Swift Metal pipeline: " + failure.getMessage(), failure); }
+    }
+
     private Resource ownResource(long id) throws Throwable {
         if (id == 0) throw new IllegalStateException("Swift Metal resource creation failed");
         try {
@@ -160,6 +176,8 @@ public final class NativeMetalDevice implements AutoCloseable {
         private final long id;
         private final MemorySegment borrowed;
         private boolean released;
+
+        private NativeMetalDevice owner() { return NativeMetalDevice.this; }
 
         private Resource(long id, MemorySegment borrowed) { this.id = id; this.borrowed = borrowed; }
 

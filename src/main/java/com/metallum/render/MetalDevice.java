@@ -287,11 +287,11 @@ final class MetalDevice implements GpuDeviceBackend {
         return GlslPreprocessor.injectDefines(stripped, defines);
     }
 
-    MemorySegment getOrCompileFunction(final String msl, final String entryPoint) {
+    MTLFunction getOrCompileFunction(final String msl, final String entryPoint) {
         return this.functionCache.computeIfAbsent(
                 new MslFunctionKey(msl, entryPoint),
                 key -> this.metalDevice.newFunction(key.msl(), key.entryPoint())
-        ).handle();
+        );
     }
 
     private record ShaderCompilationKey(Identifier id, ShaderType type, ShaderDefines defines) {

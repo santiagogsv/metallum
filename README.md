@@ -16,4 +16,4 @@ vibecoded as hell
 
 An opt-in Swift device ownership bridge is available as the first incremental migration milestone. See [the architecture, build instructions, migration plan, and validation limits](docs/swift-backend.md). The existing Java renderer remains the default.
 
-The current migration build is `0.0.24-swift.4`: Swift 6.4, macOS 27, MSL 4.1, Swift resource ownership, and native shader compilation/library caching. See [milestone 4](docs/swift-shaders.md) for scope, upgrade and test instructions. Run `./gradlew build checkNative` to build and run GPU-independent native checks.
+The current migration build is `0.0.24-swift.5`: Swift 6.4, macOS 27, MSL 4.1, Swift resource ownership, native shader compilation/library caching, and Swift render-pipeline ownership. See [milestone 5](docs/swift-pipelines.md) for scope, upgrade and test instructions. Run `./gradlew build checkNative` to build and run GPU-independent native checks.

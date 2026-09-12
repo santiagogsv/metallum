@@ -8,6 +8,6 @@ mkdir -p build/native/test-classes
 xcrun clang -dynamiclib -I native/include native/tests/ffi_fixture.c -o build/native/libffi_fixture.dylib
 xcrun clang -dynamiclib -DTEST_ABI_VERSION=1 -I native/include native/tests/ffi_fixture.c -o build/native/libold_abi_fixture.dylib
 "$javac_bin" --release 25 -d build/native/test-classes \
-    src/main/java/com/metallum/nativebridge/NativeMetalDevice.java native/tests/NativeDeviceSmoke.java
+    src/main/java/com/metallum/nativebridge/NativeMetalDevice.java src/main/java/com/metallum/nativebridge/NativePipelineDescriptor.java native/tests/NativeDeviceSmoke.java
 "$java_bin" --enable-native-access=ALL-UNNAMED -cp build/native/test-classes \
     NativeDeviceSmoke "$PWD/build/native/libffi_fixture.dylib" "$PWD/build/native/libold_abi_fixture.dylib"
