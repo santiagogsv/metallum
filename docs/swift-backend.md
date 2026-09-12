@@ -1,5 +1,7 @@
 # Incremental Swift backend
 
+This page records the original architecture and milestone 1. See [milestone 2](swift-buffers.md) for the current macOS 27 target, supported `@c` exports, ABI 2, buffer ownership, and MSL 4.1 changes.
+
 ## Current architecture
 
 - Fabric entry point: `Metallum`, the mixin configuration/plugin, and the preferred-graphics-API mixin select `MetalBackend`. Access wideners expose Minecraft integration points.

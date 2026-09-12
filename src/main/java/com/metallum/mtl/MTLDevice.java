@@ -21,6 +21,10 @@ public record MTLDevice(MemorySegment handle) {
     private static final MethodHandle CREATE_SYSTEM_DEFAULT_DEVICE = ObjC.LINKER.downcallHandle(
             ObjC.METAL.findOrThrow("MTLCreateSystemDefaultDevice"), FunctionDescriptor.of(ADDRESS));
 
+    private static final Msg NEW_COMPILE_OPTIONS = Msg.of("new", ADDRESS);
+    private static final Msg SET_LANGUAGE_VERSION = Msg.ofVoid("setLanguageVersion:", JAVA_LONG);
+    private static final long MSL_4_1 = (4L << 16) | 1L; // macOS 27 SDK enum encoding
+
     private static final Msg NEW_BUFFER = Msg.of("newBufferWithLength:options:", ADDRESS, JAVA_LONG, JAVA_LONG);
     private static final Msg NEW_COMMAND_QUEUE = Msg.of("newCommandQueue", ADDRESS);
     private static final Msg NEW_TEXTURE = Msg.of("newTextureWithDescriptor:", ADDRESS, ADDRESS);
@@ -118,8 +122,16 @@ public record MTLDevice(MemorySegment handle) {
         try (AutoreleasePool _ = AutoreleasePool.push(); Arena arena = Arena.ofConfined()) {
             MemorySegment errorOut = arena.allocate(ADDRESS);
             MemorySegment nsSource = ObjC.nsString(mslSource);
-            MemorySegment library = NEW_LIBRARY_WITH_SOURCE.sendPtr(handle, nsSource, MemorySegment.NULL, errorOut);
-            ObjC.release(nsSource);
+            MemorySegment options = NEW_COMPILE_OPTIONS.sendPtr(ObjC.clazz("MTLCompileOptions"));
+            MemorySegment library;
+            try {
+                if (ObjC.isNil(options)) throw new IllegalStateException("Could not create Metal compile options");
+                SET_LANGUAGE_VERSION.send(options, MSL_4_1);
+                library = NEW_LIBRARY_WITH_SOURCE.sendPtr(handle, nsSource, options, errorOut);
+            } finally {
+                if (!ObjC.isNil(options)) ObjC.release(options);
+                ObjC.release(nsSource);
+            }
             if (ObjC.isNil(library)) {
                 Metallum.LOGGER.error("[metallum] Failed to compile MSL: {}", errorDescription(errorOut));
                 return MemorySegment.NULL;

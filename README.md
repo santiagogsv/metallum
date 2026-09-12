@@ -8,10 +8,12 @@ Compatible with Sodium.
 vibecoded as hell
 
 ## Requirements
-- macOS
+- macOS 27 or newer
 - Apple Silicon (M1 or newer)
 
 
 ## Swift backend development
 
 An opt-in Swift device ownership bridge is available as the first incremental migration milestone. See [the architecture, build instructions, migration plan, and validation limits](docs/swift-backend.md). The existing Java renderer remains the default.
+
+The current migration build is `0.0.24-swift.2`: Swift 6.4, macOS 27 deployment target, MSL 4.1, and Swift-owned buffers. See [milestone 2](docs/swift-buffers.md) for upgrade and test instructions.

@@ -70,6 +70,8 @@ tasks.register('buildNative', Exec) {
     group = 'build'
     description = 'Build the Swift Metal device bridge for the host macOS architecture'
     inputs.file('native/MetallumNative.swift')
+    inputs.property('nativeTarget', 'arm64-apple-macosx27.0')
+    inputs.property('swiftLanguageMode', '6')
     outputs.file(layout.buildDirectory.file('native/libmetallum_native.dylib'))
     doFirst {
         if (!System.getProperty('os.name').toLowerCase().contains('mac')) {
@@ -78,6 +80,7 @@ tasks.register('buildNative', Exec) {
         file('build/native').mkdirs()
     }
     commandLine 'xcrun', 'swiftc', '-parse-as-library', '-emit-library', '-O',
+            '-swift-version', '6', '-target', 'arm64-apple-macosx27.0',
             '-module-cache-path', file('build/native/module-cache').absolutePath,
             '-module-name', 'MetallumNative', 'native/MetallumNative.swift',
             '-o', file('build/native/libmetallum_native.dylib').absolutePath

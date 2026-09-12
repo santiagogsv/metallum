@@ -326,7 +326,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     private void orphanWrite(final MetalGpuBuffer buffer, final long offset, final ByteBuffer data) {
         long size = buffer.allocationSize();
         MTLBuffer old = buffer.metalBuffer();
-        MTLBuffer fresh = acquireDynamicBacking(size, buffer.resourceOptions());
+        MTLBuffer fresh = acquireDynamicBacking(size);
         ByteBuffer freshStorage = ObjC.byteBufferView(fresh.contents(), size).order(ByteOrder.nativeOrder());
 
         if (offset != 0 || data.remaining() != buffer.size()) {
@@ -343,12 +343,12 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         recycleDynamicBacking(old, size);
     }
 
-    private MTLBuffer acquireDynamicBacking(final long size, final long resourceOptions) {
+    private MTLBuffer acquireDynamicBacking(final long size) {
         ArrayDeque<MTLBuffer> bucket = dynamicBackingPool.get(size);
         if (bucket != null && !bucket.isEmpty()) {
             return bucket.pop();
         }
-        return device.metalDevice().newBuffer(size, resourceOptions);
+        return device.allocateBuffer(size, true);
     }
 
     private void recycleDynamicBacking(final MTLBuffer buffer, final long size) {
@@ -574,7 +574,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         destroyQueue.close();
         for (ArrayDeque<MTLBuffer> bucket : dynamicBackingPool.values()) {
             for (MTLBuffer buffer : bucket) {
-                ObjC.release(buffer.handle());
+                buffer.close();
             }
         }
         dynamicBackingPool.clear();

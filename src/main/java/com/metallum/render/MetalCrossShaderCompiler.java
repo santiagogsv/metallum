@@ -31,7 +31,8 @@ import java.util.regex.Pattern;
 @Environment(EnvType.CLIENT)
 final class MetalCrossShaderCompiler {
     private static final Set<String> BUILT_IN_UNIFORMS = Set.of("Projection", "Lighting", "Fog", "Globals");
-    private static final int MSL_VERSION_4_0 = 0x040000;
+    // SPIRV-Cross uses decimal MMmmpp, unlike Apple's MTLLanguageVersion enum.
+    private static final int MSL_VERSION_4_1 = 40100;
     private static final Pattern VERTEX_ENTRY_PATTERN = Pattern.compile("\\bvertex\\s+\\w+\\s+(\\w+)\\s*\\(");
     private static final Pattern FRAGMENT_ENTRY_PATTERN = Pattern.compile("\\bfragment\\s+\\w+\\s+(\\w+)\\s*\\(");
 
@@ -310,7 +311,7 @@ final class MetalCrossShaderCompiler {
                         "spvc_compiler_options_set_uint(MSL_PLATFORM)"
                 );
                 checkSpvc(
-                        Spvc.spvc_compiler_options_set_uint(options, Spvc.SPVC_COMPILER_OPTION_MSL_VERSION, MSL_VERSION_4_0),
+                        Spvc.spvc_compiler_options_set_uint(options, Spvc.SPVC_COMPILER_OPTION_MSL_VERSION, MSL_VERSION_4_1),
                         "spvc_compiler_options_set_uint(MSL_VERSION)"
                 );
                 checkSpvc(

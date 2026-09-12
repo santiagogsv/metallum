@@ -1,9 +1,6 @@
 package com.metallum.render;
 
 import com.metallum.mtl.MTLBuffer;
-import com.metallum.mtl.MTLHazardTrackingMode;
-import com.metallum.mtl.MTLResourceOptions;
-import com.metallum.mtl.MTLStorageMode;
 import com.metallum.objc.ObjC;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
@@ -21,7 +18,6 @@ class MetalGpuBuffer extends GpuBuffer {
     private final MetalDevice device;
     private final boolean cpuAccessible;
     private final boolean dynamic;
-    private final long resourceOptions;
     private final long allocationSize;
     @Nullable
     private MTLBuffer nativeBuffer;
@@ -35,21 +31,22 @@ class MetalGpuBuffer extends GpuBuffer {
 
         this.dynamic = isDynamic(usage);
         this.cpuAccessible = isCpuAccessible(usage) || this.dynamic;
-        this.resourceOptions = toMtlResourceOptions(usage);
-        this.allocationSize = (size + 15L) & ~15L;
-        this.nativeBuffer = device.metalDevice().newBuffer(this.allocationSize, this.resourceOptions);
+        if (size < 0 || size > Long.MAX_VALUE - 15L) throw new IllegalArgumentException("Invalid buffer size: " + size);
+        this.allocationSize = Math.max(16L, (size + 15L) & ~15L);
+        this.nativeBuffer = device.allocateBuffer(this.allocationSize, this.cpuAccessible);
 
-        if (this.cpuAccessible) {
-            MemorySegment contents = this.nativeBuffer.contents();
-            if (ObjC.isNil(contents)) {
-                ObjC.release(this.nativeBuffer.handle());
-                this.nativeBuffer = null;
-                throw new IllegalStateException("MTLBuffer.contents returned null");
+        try {
+            if (this.cpuAccessible) {
+                MemorySegment contents = this.nativeBuffer.contents();
+                if (ObjC.isNil(contents)) throw new IllegalStateException("MTLBuffer.contents returned null");
+                this.storage = ObjC.byteBufferView(contents, this.allocationSize).order(ByteOrder.nativeOrder());
+            } else {
+                this.storage = null;
             }
-
-            this.storage = ObjC.byteBufferView(contents, this.allocationSize).order(ByteOrder.nativeOrder());
-        } else {
-            this.storage = null;
+        } catch (Throwable failure) {
+            this.nativeBuffer.close();
+            this.nativeBuffer = null;
+            throw failure;
         }
     }
 
@@ -58,7 +55,6 @@ class MetalGpuBuffer extends GpuBuffer {
         this.device = device;
         this.cpuAccessible = false;
         this.dynamic = false;
-        this.resourceOptions = 0L;
         this.allocationSize = size;
         this.nativeBuffer = wrappedBuffer;
         this.storage = null;
@@ -103,10 +99,6 @@ class MetalGpuBuffer extends GpuBuffer {
         return this.allocationSize;
     }
 
-    long resourceOptions() {
-        return this.resourceOptions;
-    }
-
     ByteBuffer currentStorage() {
         if (this.storage == null) {
             throw new IllegalStateException("Buffer is not CPU-accessible");
@@ -132,9 +124,9 @@ class MetalGpuBuffer extends GpuBuffer {
         this.closed = true;
         this.storage = null;
         if (this.nativeBuffer != null) {
-            MemorySegment handle = this.nativeBuffer.handle();
+            MTLBuffer buffer = this.nativeBuffer;
             this.nativeBuffer = null;
-            this.device.queueResourceRelease(handle);
+            this.device.queueBufferRelease(buffer);
         }
     }
 
@@ -172,8 +164,4 @@ class MetalGpuBuffer extends GpuBuffer {
         return (usage & GpuBuffer.USAGE_UNIFORM) != 0 && (usage & GpuBuffer.USAGE_COPY_DST) != 0;
     }
 
-    private static long toMtlResourceOptions(@GpuBuffer.Usage final int usage) {
-        MTLStorageMode storageMode = isCpuAccessible(usage) || isDynamic(usage) ? MTLStorageMode.Shared : MTLStorageMode.Private;
-        return MTLResourceOptions.of(storageMode, MTLHazardTrackingMode.Untracked);
-    }
 }

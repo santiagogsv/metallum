@@ -78,11 +78,11 @@ public class MetalBackend implements GpuBackend {
 
             cocoa.setViewLayer(metalLayer.handle());
 
-            Metallum.LOGGER.info("Metal device: {}", deviceName);
+            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, nativeOwner == null ? "Java" : "Swift device + buffers, ABI 2");
 
             try {
                 MetalDevice backend = new MetalDevice(defaultShaderSource, debugOptions, metalDevice.handle(), metalLayer, deviceName, cocoa,
-                        nativeOwner == null ? () -> ObjC.release(metalDevice.handle()) : nativeOwner::close);
+                        nativeOwner == null ? () -> ObjC.release(metalDevice.handle()) : nativeOwner::close, nativeOwner);
                 try {
                     GpuDevice result = new GpuDevice(backend, criticalShaderLoader);
                     transferred = true;

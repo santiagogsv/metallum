@@ -1,6 +1,7 @@
 package com.metallum.render;
 
 import com.metallum.mtl.*;
+import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.objc.Cocoa;
 import com.metallum.objc.ObjC;
 import com.mojang.blaze3d.GpuFormat;
@@ -36,6 +37,7 @@ final class MetalDevice implements GpuDeviceBackend {
     private final MemorySegment metalDeviceHandle;
     private final MTLDevice metalDevice;
     private final Runnable releaseDevice;
+    private final NativeMetalDevice nativeOwner;
     private final CAMetalLayer metalLayer;
     private final Cocoa cocoa;
     private final GpuDebugOptions debugOptions;
@@ -55,9 +57,11 @@ final class MetalDevice implements GpuDeviceBackend {
             final CAMetalLayer metalLayer,
             final String deviceName,
             final Cocoa cocoa,
-            final Runnable releaseDevice
+            final Runnable releaseDevice,
+            final NativeMetalDevice nativeOwner
     ) {
         this.releaseDevice = releaseDevice;
+        this.nativeOwner = nativeOwner;
         this.defaultShaderSource = defaultShaderSource;
         this.debugOptions = debugOptions;
         this.metalDeviceHandle = metalDeviceHandle;
@@ -238,6 +242,16 @@ final class MetalDevice implements GpuDeviceBackend {
 
     void waitForSubmittedGpuWork() {
         this.commandEncoder.waitForSubmittedGpuWork();
+    }
+
+    MTLBuffer allocateBuffer(long size, boolean cpuAccessible) {
+        if (nativeOwner != null) return new MTLBuffer(nativeOwner.createBuffer(size, cpuAccessible));
+        return metalDevice.newBuffer(size, MTLResourceOptions.of(
+                cpuAccessible ? MTLStorageMode.Shared : MTLStorageMode.Private, MTLHazardTrackingMode.Untracked));
+    }
+
+    void queueBufferRelease(MTLBuffer buffer) {
+        this.commandEncoder.queueForDestroy(buffer::close);
     }
 
     void queueResourceRelease(final MemorySegment handle) {
