@@ -1,7 +1,6 @@
 package com.metallum.render;
 
 import com.metallum.mtl.MTLBuffer;
-import com.metallum.objc.ObjC;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import net.fabricmc.api.EnvType;
@@ -38,8 +37,8 @@ class MetalGpuBuffer extends GpuBuffer {
         try {
             if (this.cpuAccessible) {
                 MemorySegment contents = this.nativeBuffer.contents();
-                if (ObjC.isNil(contents)) throw new IllegalStateException("MTLBuffer.contents returned null");
-                this.storage = ObjC.byteBufferView(contents, this.allocationSize).order(ByteOrder.nativeOrder());
+                if (contents.address() == 0) throw new IllegalStateException("MTLBuffer.contents returned null");
+                this.storage = contents.reinterpret(this.allocationSize).asByteBuffer().order(ByteOrder.nativeOrder());
             } else {
                 this.storage = null;
             }
@@ -79,9 +78,6 @@ class MetalGpuBuffer extends GpuBuffer {
         return this.nativeBuffer;
     }
 
-    MemorySegment nativeHandle() {
-        return metalBuffer().handle();
-    }
 
     boolean isDynamic() {
         return this.dynamic;

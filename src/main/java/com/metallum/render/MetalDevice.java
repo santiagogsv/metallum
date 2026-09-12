@@ -23,7 +23,6 @@ import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
-import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.function.Supplier;
@@ -33,7 +32,6 @@ import java.util.regex.Pattern;
 final class MetalDevice implements GpuDeviceBackend {
     private static final Pattern BLOCK_COMMENTS = Pattern.compile("(?s)/\\*.*?\\*/");
     private static final Pattern LINE_COMMENTS = Pattern.compile("(?m)//[^\\n]*");
-    private final MemorySegment metalDeviceHandle;
     private final MTLDevice metalDevice;
     private final Runnable releaseDevice;
     private final NativeMetalDevice nativeOwner;
@@ -51,7 +49,6 @@ final class MetalDevice implements GpuDeviceBackend {
     MetalDevice(
             final ShaderSource defaultShaderSource,
             final GpuDebugOptions debugOptions,
-            final MemorySegment metalDeviceHandle,
             final CAMetalLayer metalLayer,
             final String deviceName,
             final Cocoa cocoa,
@@ -62,8 +59,7 @@ final class MetalDevice implements GpuDeviceBackend {
         this.nativeOwner = nativeOwner;
         this.defaultShaderSource = defaultShaderSource;
         this.debugOptions = debugOptions;
-        this.metalDeviceHandle = metalDeviceHandle;
-        this.metalDevice = new MTLDevice(metalDeviceHandle, nativeOwner);
+        this.metalDevice = new MTLDevice(nativeOwner);
         this.metalLayer = metalLayer;
         this.cocoa = cocoa;
         MTLBuiltinPipelines.init(this.metalDevice);
@@ -210,18 +206,14 @@ final class MetalDevice implements GpuDeviceBackend {
         return this.deviceInfo;
     }
 
-    MemorySegment metalDeviceHandle() {
-        return this.metalDeviceHandle;
-    }
-
     MTLDevice metalDevice() {
         return this.metalDevice;
     }
 
-    MemorySegment depthStencilState(final MTLCompareFunction compareFunction, final boolean writeDepth) {
+    NativeMetalDevice.Resource depthStencilState(final MTLCompareFunction compareFunction, final boolean writeDepth) {
         long key = (compareFunction.value << 1) | (writeDepth ? 1L : 0L);
         return depthStencilStates.computeIfAbsent(key,
-                ignored -> nativeOwner.createDepthState(compareFunction.value, writeDepth)).borrowedHandle();
+                ignored -> nativeOwner.createDepthState(compareFunction.value, writeDepth));
     }
 
     void waitForSubmittedGpuWork() {

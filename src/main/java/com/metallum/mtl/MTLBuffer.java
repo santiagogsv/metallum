@@ -22,11 +22,6 @@ public final class MTLBuffer implements AutoCloseable {
         if (closed) throw new IllegalStateException("Metal buffer is closed");
     }
 
-    public MemorySegment handle() {
-        checkOpen();
-        return nativeOwner.borrowedBuffer();
-    }
-
     public MemorySegment contents() {
         checkOpen();
         return nativeOwner.contents();

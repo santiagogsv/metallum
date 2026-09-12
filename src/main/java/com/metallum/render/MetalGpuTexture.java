@@ -9,7 +9,6 @@ import net.fabricmc.api.Environment;
 import org.joml.Vector4fc;
 import org.jspecify.annotations.Nullable;
 
-import java.lang.foreign.MemorySegment;
 
 @Environment(EnvType.CLIENT)
 final class MetalGpuTexture extends GpuTexture {
@@ -24,7 +23,7 @@ final class MetalGpuTexture extends GpuTexture {
     private Double materializedDepthClear;
     private int views = 1;
     @Nullable
-    private MemorySegment nativeHandle;
+    private NativeMetalDevice.Resource nativeResource;
 
     MetalGpuTexture(
             final MetalDevice device,
@@ -43,7 +42,7 @@ final class MetalGpuTexture extends GpuTexture {
         this.nativeOwner = device.nativeOwner().createTexture(this.mtlPixelFormat.value, width, height, depthOrLayers,
                 Math.max(mipLevels, 1), (usage & GpuTexture.USAGE_CUBEMAP_COMPATIBLE) != 0,
                 (usage & GpuTexture.USAGE_RENDER_ATTACHMENT) != 0, label);
-        this.nativeHandle = this.nativeOwner.borrowedHandle();
+        this.nativeResource = this.nativeOwner;
     }
 
     int pixelSize() {
@@ -69,11 +68,11 @@ final class MetalGpuTexture extends GpuTexture {
         this.materializedDepthClear = null;
     }
 
-    MemorySegment nativeHandle() {
-        if (this.nativeHandle == null) {
+    NativeMetalDevice.Resource nativeResource() {
+        if (this.nativeResource == null) {
             throw new IllegalStateException("Native Metal texture is closed");
         }
-        return this.nativeHandle;
+        return this.nativeResource;
     }
 
     NativeMetalDevice.Resource nativeOwner() { return this.nativeOwner; }
@@ -90,9 +89,9 @@ final class MetalGpuTexture extends GpuTexture {
         if (this.views < 0) {
             throw new IllegalStateException("Too many views removed from texture");
         }
-        if (this.closed && this.views == 0 && this.nativeHandle != null) {
+        if (this.closed && this.views == 0 && this.nativeResource != null) {
             this.device.forgetTexture(this);
-            this.nativeHandle = null;
+            this.nativeResource = null;
             this.device.queueNativeRelease(this.nativeOwner::close);
         }
     }

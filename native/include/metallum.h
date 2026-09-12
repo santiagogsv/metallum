@@ -78,20 +78,27 @@ int32_t metallum_submission_wait(void *context, uint64_t submission, int64_t tim
  * Buffer IDs use the buffer table; texture/command/fence IDs use resources. */
 uint64_t metallum_fence_create(void *context);
 int32_t metallum_copy_pass(void *context, uint64_t command, uint64_t fence, const uint64_t *words, uint32_t count, char *error, uint32_t capacity);
-/* ABI 11: borrowed texture pointers must stay valid during this render-thread call.
+/* ABI 13: color/depth are texture resource IDs; zero omits an attachment.
  * Clear points to five doubles (RGBA, depth). Loads: 0 discard, 1 preserve, 2 clear.
  * Returns an owned pass ID; resource_borrow_mtl borrows its encoder.
  * Destroying the pass ends encoding exactly once. End before command submission. */
-uint64_t metallum_render_pass_create(void *context, uint64_t command, void *color, void *depth, uint32_t color_load, uint32_t depth_load, const double *clear);
-/* ABI 12: synchronous render-thread operations. words has eight int64_t slots;
- * floating-point slots use the IEEE double bit pattern. Pointers are borrowed
- * Metal objects (except raw vertex bytes), valid through the call. See MetalDraws.swift.
+uint64_t metallum_render_pass_create(void *context, uint64_t command, uint64_t color, uint64_t depth, uint32_t color_load, uint32_t depth_load, const double *clear);
+/* ABI 13: synchronous render-thread operations. words has eight int64_t slots;
+ * floating-point slots use the IEEE double bit pattern. p0/p1 are resource IDs,
+ * using the buffer table for buffer operations. Zero unbinds nullable resources.
+ * Inline bytes use metallum_render_bytes. See MetalDraws.swift.
  * Returns 1 on success, 0 for invalid IDs/opcodes/arguments. */
-int32_t metallum_render_command(void *context, uint64_t pass, uint32_t op, void *p0, void *p1, const int64_t *words);
+int32_t metallum_render_command(void *context, uint64_t pass, uint32_t op, uint64_t p0, uint64_t p1, const int64_t *words);
 uint64_t metallum_layer_create(void *context, double scale);
 int32_t metallum_layer_configure(void *context, uint64_t layer, double width, double height, uint32_t immediate);
 /* Acquires and presents the drawable entirely in Swift. No available drawable is a successful skipped frame. */
-int32_t metallum_present(void *context, uint64_t command, uint64_t layer, void *source, uint64_t fence, void *pipeline, void *nearest, void *linear);
+int32_t metallum_present(void *context, uint64_t command, uint64_t layer, uint64_t source, uint64_t fence, uint64_t pipeline, uint64_t nearest, uint64_t linear);
+/* ABI 13: render resources use device-local IDs; only inline bytes are pointers. */
+int32_t metallum_render_bytes(void *context, uint64_t pass, const void *bytes, uint64_t length, uint64_t index);
+uint64_t metallum_texture_info(void *context, uint64_t texture, uint32_t field);
+int32_t metallum_command_debug(void *context, uint64_t command, const char *label);
+uint64_t metallum_device_info(void *context, uint32_t field);
+void metallum_device_name(void *context, char *output, uint32_t capacity);
 #ifdef __cplusplus
 }
 #endif

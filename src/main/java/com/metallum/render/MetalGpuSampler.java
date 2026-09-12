@@ -8,14 +8,13 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import org.jspecify.annotations.NonNull;
 
-import java.lang.foreign.MemorySegment;
 import java.util.OptionalDouble;
 
 @Environment(EnvType.CLIENT)
 final class MetalGpuSampler extends GpuSampler {
     private final MetalDevice device;
     private final NativeMetalDevice.Resource nativeOwner;
-    private final MemorySegment nativeHandle;
+    private final NativeMetalDevice.Resource nativeResource;
     private final AddressMode addressModeU;
     private final AddressMode addressModeV;
     private final FilterMode minFilter;
@@ -36,7 +35,7 @@ final class MetalGpuSampler extends GpuSampler {
         this.device = device;
         this.nativeOwner = device.nativeOwner().createSampler(addressModeU == AddressMode.REPEAT, addressModeV == AddressMode.REPEAT,
                 minFilter == FilterMode.LINEAR, magFilter == FilterMode.LINEAR, Math.clamp(maxAnisotropy, 1, 16), maxLod.orElse(1000.0));
-        this.nativeHandle = this.nativeOwner.borrowedHandle();
+        this.nativeResource = this.nativeOwner;
         this.addressModeU = addressModeU;
         this.addressModeV = addressModeV;
         this.minFilter = minFilter;
@@ -88,9 +87,9 @@ final class MetalGpuSampler extends GpuSampler {
         return this.closed;
     }
 
-    MemorySegment nativeHandle() {
+    NativeMetalDevice.Resource nativeResource() {
         if (this.closed) throw new IllegalStateException("Sampler is closed");
-        return this.nativeHandle;
+        return this.nativeResource;
     }
 
 }

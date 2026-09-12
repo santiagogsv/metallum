@@ -21,10 +21,10 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
-    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, layerCreate, layerConfigure, present;
+    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, layerCreate, layerConfigure, present, renderBytes, textureInfo, commandDebug, deviceInfo, deviceName;
     // Reused only on the confined render thread; calls consume the words synchronously.
     private final MemorySegment drawWords = arena.allocate(64, 8);
-    private final MemorySegment borrowedDevice;
+    private final MethodHandle deviceBorrow;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
 
@@ -34,9 +34,9 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 12) throw new IllegalStateException("Expected Metallum native ABI 12, found " + abiVersion);
+            if (abiVersion != 13) throw new IllegalStateException("Expected Metallum native ABI 13, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
-            MethodHandle borrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
+            deviceBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
             bufferCreate = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_INT));
             bufferBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_LONG));
@@ -65,29 +65,28 @@ public final class NativeMetalDevice implements AutoCloseable {
             fenceCreate = linker.downcallHandle(symbols.findOrThrow("metallum_fence_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS));
             layerCreate = linker.downcallHandle(symbols.findOrThrow("metallum_layer_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_DOUBLE));
             layerConfigure = linker.downcallHandle(symbols.findOrThrow("metallum_layer_configure"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_DOUBLE, JAVA_DOUBLE, JAVA_INT));
-            present = linker.downcallHandle(symbols.findOrThrow("metallum_present"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS, ADDRESS));
-            renderCommand = linker.downcallHandle(symbols.findOrThrow("metallum_render_command"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
-            renderPassCreate = linker.downcallHandle(symbols.findOrThrow("metallum_render_pass_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, ADDRESS));
+            present = linker.downcallHandle(symbols.findOrThrow("metallum_present"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG));
+            deviceInfo = linker.downcallHandle(symbols.findOrThrow("metallum_device_info"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT));
+            deviceName = linker.downcallHandle(symbols.findOrThrow("metallum_device_name"), FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, JAVA_INT));
+            renderBytes = linker.downcallHandle(symbols.findOrThrow("metallum_render_bytes"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG));
+            textureInfo = linker.downcallHandle(symbols.findOrThrow("metallum_texture_info"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_INT));
+            commandDebug = linker.downcallHandle(symbols.findOrThrow("metallum_command_debug"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, ADDRESS));
+            renderCommand = linker.downcallHandle(symbols.findOrThrow("metallum_render_command"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_INT, JAVA_LONG, JAVA_LONG, ADDRESS));
+            renderPassCreate = linker.downcallHandle(symbols.findOrThrow("metallum_render_pass_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_INT, JAVA_INT, ADDRESS));
             copyPass = linker.downcallHandle(symbols.findOrThrow("metallum_copy_pass"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT, ADDRESS, JAVA_INT));
             context = (MemorySegment) create.invokeExact();
             if (context.address() == 0) throw new IllegalStateException("Swift could not create a Metal device");
-            try {
-                borrowedDevice = (MemorySegment) borrow.invokeExact(context);
-                if (borrowedDevice.address() == 0) throw new IllegalStateException("Swift returned a null Metal device");
-            } catch (Throwable failure) {
-                destroy.invokeExact(context);
-                throw failure;
-            }
         } catch (Throwable failure) {
             arena.close();
             throw new IllegalStateException("Cannot initialize Swift Metal bridge: " + library, failure);
         }
     }
 
-    /** Migration-only borrowed pointer. Do not retain ownership or release it. */
+    /** Diagnostic-only borrowed pointer. Rendering uses IDs. Do not release it. */
     public MemorySegment borrowedDevice() {
         checkOpen();
-        return borrowedDevice;
+        try { return (MemorySegment) deviceBorrow.invokeExact(context); }
+        catch (Throwable failure) { throw new IllegalStateException("Cannot inspect native device", failure); }
     }
 
     private void checkThread() {
@@ -105,14 +104,7 @@ public final class NativeMetalDevice implements AutoCloseable {
         try {
             long id = (long) bufferCreate.invokeExact(context, length, cpuAccessible ? 1 : 0);
             if (id == 0) throw new IllegalStateException("Swift Metal buffer allocation failed: " + length + " bytes");
-            try {
-                MemorySegment borrowed = (MemorySegment) bufferBorrow.invokeExact(context, id);
-                if (borrowed.address() == 0) throw new IllegalStateException("Native buffer is missing");
-                return new Buffer(id, length, borrowed);
-            } catch (Throwable failure) {
-                bufferDestroy.invokeExact(context, id);
-                throw failure;
-            }
+            return new Buffer(id, length);
         } catch (Throwable failure) {
             throw new IllegalStateException("Cannot create Swift Metal buffer", failure);
         }
@@ -174,6 +166,33 @@ public final class NativeMetalDevice implements AutoCloseable {
         } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal memory", failure); }
     }
 
+    public long deviceInfo(int field) {
+        checkOpen();
+        try { return (long) deviceInfo.invokeExact(context, field); }
+        catch (Throwable failure) { throw new IllegalStateException("Cannot inspect device", failure); }
+    }
+    public String deviceName() {
+        checkOpen();
+        try (Arena scratch = Arena.ofConfined()) {
+            MemorySegment name = scratch.allocate(1024);
+            deviceName.invokeExact(context, name, 1024);
+            return name.getString(0);
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot read device name", failure); }
+    }
+    public void renderBytes(Resource pass, MemorySegment bytes, long length, long index) {
+        long id = pass.id(this);
+        if (length < 0 || length > 4096 || index < 0) throw new IllegalArgumentException("Invalid inline data");
+        try {
+            if ((int) renderBytes.invokeExact(context, id, bytes, length, index) != 1) throw new IllegalArgumentException("Invalid render pass");
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot encode inline data", failure); }
+    }
+    public void commandDebug(Resource command, String label) {
+        long id = command.id(this);
+        try (Arena scratch = Arena.ofConfined()) {
+            MemorySegment text = label == null ? MemorySegment.NULL : scratch.allocateFrom(label);
+            if ((int) commandDebug.invokeExact(context, id, text) != 1) throw new IllegalArgumentException("Invalid command");
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot label Metal command", failure); }
+    }
     public Resource createLayer(double scale) {
         checkOpen();
         try { return ownResource((long) layerCreate.invokeExact(context, scale)); }
@@ -188,16 +207,16 @@ public final class NativeMetalDevice implements AutoCloseable {
         } catch (Throwable failure) { throw new IllegalStateException("Cannot configure Metal layer", failure); }
     }
 
-    public void present(Resource command, Resource layer, MemorySegment source, Resource fence,
-                        MemorySegment pipeline, MemorySegment nearest, MemorySegment linear) {
+    public void present(Resource command, Resource layer, Resource source, Resource fence,
+                        Resource pipeline, Resource nearest, Resource linear) {
         long commandID = command.id(this), layerID = layer.id(this), fenceID = fence == null ? 0 : fence.id(this);
         try {
-            if ((int) present.invokeExact(context, commandID, layerID, source, fenceID, pipeline, nearest, linear) != 1)
+            if ((int) present.invokeExact(context, commandID, layerID, source.id(this), fenceID, pipeline.id(this), nearest.id(this), linear.id(this)) != 1)
                 throw new IllegalStateException("Metal presentation rejected");
         } catch (Throwable failure) { throw new IllegalStateException("Cannot present Metal frame", failure); }
     }
 
-    public void renderCommand(Resource pass, int op, MemorySegment p0, MemorySegment p1,
+    public void renderCommand(Resource pass, int op, long p0, long p1,
                               long a, long b, long c, long d, long e, long f, long g, long h) {
         long id = pass.id(this);
         drawWords.setAtIndex(JAVA_LONG, 0, a); drawWords.setAtIndex(JAVA_LONG, 1, b);
@@ -210,14 +229,14 @@ public final class NativeMetalDevice implements AutoCloseable {
         } catch (Throwable failure) { throw new IllegalStateException("Cannot encode Metal render operation " + op, failure); }
     }
 
-    public Resource createRenderPass(Resource command, MemorySegment color, MemorySegment depth,
+    public Resource createRenderPass(Resource command, Resource color, Resource depth,
                                      int colorLoad, int depthLoad, double[] clear) {
         checkOpen();
         long commandID = command.id(this);
         if (clear.length != 5) throw new IllegalArgumentException("Expected five clear values");
         try (Arena scratch = Arena.ofConfined()) {
             MemorySegment values = scratch.allocateFrom(JAVA_DOUBLE, clear);
-            return ownResource((long) renderPassCreate.invokeExact(context, commandID, color, depth, colorLoad, depthLoad, values));
+            return ownResource((long) renderPassCreate.invokeExact(context, commandID, color == null ? 0L : color.id(this), depth == null ? 0L : depth.id(this), colorLoad, depthLoad, values));
         } catch (Throwable failure) { throw new IllegalStateException("Cannot create Metal render pass", failure); }
     }
 
@@ -289,37 +308,38 @@ public final class NativeMetalDevice implements AutoCloseable {
         } catch (Throwable failure) { throw new IllegalStateException("Cannot create Swift Metal pipeline: " + failure.getMessage(), failure); }
     }
 
-    private Resource ownResource(long id) throws Throwable {
+    private Resource ownResource(long id) {
         if (id == 0) throw new IllegalStateException("Swift Metal resource creation failed");
-        try {
-            MemorySegment borrowed = (MemorySegment) resourceBorrow.invokeExact(context, id);
-            if (borrowed.address() == 0) throw new IllegalStateException("Native resource is missing");
-            return new Resource(id, borrowed);
-        } catch (Throwable failure) {
-            resourceDestroy.invokeExact(context, id);
-            throw failure;
-        }
+        return new Resource(id);
     }
 
-    /** An owning resource ID with a cached, temporary pointer for the Java command encoder. */
+    /** An owning device-local resource ID. Rendering never exposes a Metal object pointer. */
     public final class Resource implements AutoCloseable {
         private final long id;
-        private final MemorySegment borrowed;
         private boolean released;
 
         private NativeMetalDevice owner() { return NativeMetalDevice.this; }
 
         public long id(NativeMetalDevice expectedOwner) { checkResource(); if (owner() != expectedOwner) throw new IllegalArgumentException("Resource belongs to another device"); return id; }
 
-        private Resource(long id, MemorySegment borrowed) { this.id = id; this.borrowed = borrowed; }
+        private Resource(long id) { this.id = id; }
 
         private void checkResource() {
             checkOpen();
             if (released) throw new IllegalStateException("Native resource is closed");
         }
 
-        public MemorySegment borrowedHandle() { checkResource(); return borrowed; }
+        public MemorySegment borrowedHandle() {
+            checkResource();
+            try { return (MemorySegment) resourceBorrow.invokeExact(context, id); }
+            catch (Throwable failure) { throw new IllegalStateException("Cannot borrow platform object", failure); }
+        }
 
+        public long textureInfo(int field) {
+            checkResource();
+            try { return (long) textureInfo.invokeExact(context, id, field); }
+            catch (Throwable failure) { throw new IllegalStateException("Cannot inspect texture", failure); }
+        }
         public Resource createView(int baseMip, int mipCount) {
             checkResource();
             if (baseMip < 0 || mipCount <= 0) throw new IllegalArgumentException("Invalid mip range");
@@ -344,13 +364,11 @@ public final class NativeMetalDevice implements AutoCloseable {
     public final class Buffer implements AutoCloseable {
         private final long id;
         private final long length;
-        private final MemorySegment borrowed;
         private boolean released;
 
-        private Buffer(long id, long length, MemorySegment borrowed) {
+        private Buffer(long id, long length) {
             this.id = id;
             this.length = length;
-            this.borrowed = borrowed;
         }
 
         private void checkBuffer() {
@@ -372,7 +390,8 @@ public final class NativeMetalDevice implements AutoCloseable {
 
         public MemorySegment borrowedBuffer() {
             checkBuffer();
-            return borrowed;
+            try { return (MemorySegment) bufferBorrow.invokeExact(context, id); }
+            catch (Throwable failure) { throw new IllegalStateException("Cannot inspect native buffer", failure); }
         }
 
         public MemorySegment contents() {

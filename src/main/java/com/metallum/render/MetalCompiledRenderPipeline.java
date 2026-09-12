@@ -3,7 +3,6 @@ package com.metallum.render;
 import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.nativebridge.NativePipelineDescriptor;
 import com.metallum.mtl.*;
-import com.metallum.objc.ObjC;
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.CompiledRenderPipeline;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
@@ -13,7 +12,6 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import org.jspecify.annotations.Nullable;
 
-import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Map;
 
@@ -46,9 +44,9 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
 
     private NativeMetalDevice.Resource withDepthOwner, withoutDepthOwner;
     private boolean closed;
-    private final MemorySegment depthStencilState;
-    private final MemorySegment withDepthPipeline;
-    private final MemorySegment withoutDepthPipeline;
+    private final NativeMetalDevice.Resource depthStencilState;
+    private final NativeMetalDevice.Resource withDepthPipeline;
+    private final NativeMetalDevice.Resource withoutDepthPipeline;
 
     MetalCompiledRenderPipeline(
             final MetalDevice device,
@@ -111,8 +109,8 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
             this.withDepthOwner.close();
             throw failure;
         }
-        this.withDepthPipeline = this.withDepthOwner.borrowedHandle();
-        this.withoutDepthPipeline = this.withoutDepthOwner.borrowedHandle();
+        this.withDepthPipeline = this.withDepthOwner;
+        this.withoutDepthPipeline = this.withoutDepthOwner;
     }
 
     private static NativePipelineDescriptor nativeDescriptor(RenderPipeline info, int firstSlot, MTLPixelFormat color, MTLPixelFormat depth) {
@@ -144,7 +142,7 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
 
     @Override
     public boolean isValid() {
-        return !ObjC.isNil(this.withDepthPipeline);
+        return !(this.withDepthPipeline == null);
     }
 
     List<ResourceBinding> resources() {
@@ -172,11 +170,11 @@ final class MetalCompiledRenderPipeline implements CompiledRenderPipeline, AutoC
         return this.depthBiasConstant;
     }
 
-    MemorySegment getDepthStencilState() {
+    NativeMetalDevice.Resource getDepthStencilState() {
         return this.depthStencilState;
     }
 
-    MemorySegment getNativePipeline(final boolean useDepth) {
+    NativeMetalDevice.Resource getNativePipeline(final boolean useDepth) {
         return useDepth ? this.withDepthPipeline : this.withoutDepthPipeline;
     }
 

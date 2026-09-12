@@ -35,19 +35,18 @@ public func metallumLayerConfigure(_ handle: UnsafeMutableRawPointer?, _ layerID
 // retained by Metal for scheduled presentation, with temporary references drained here.
 @c(metallum_present)
 public func metallumPresent(_ handle: UnsafeMutableRawPointer?, _ commandID: UInt64, _ layerID: UInt64,
-                            _ source: UnsafeMutableRawPointer?, _ fenceID: UInt64,
-                            _ pipeline: UnsafeMutableRawPointer?, _ nearest: UnsafeMutableRawPointer?,
-                            _ linear: UnsafeMutableRawPointer?) -> Int32 {
+                            _ source: UInt64, _ fenceID: UInt64,
+                            _ pipeline: UInt64, _ nearest: UInt64,
+                            _ linear: UInt64) -> Int32 {
     autoreleasepool {
-        guard let handle, let source, let pipeline, let nearest, let linear else { return 0 }
+        guard let handle else { return 0 }
         let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
-        guard let command = context.resources[commandID] as? any MTLCommandBuffer,
-              command.status == .notEnqueued || command.status == .enqueued,
+        guard let command = context.resources[commandID] as? NativeCommand, command.canEncode,
               let layer = context.resources[layerID] as? CAMetalLayer,
-              let texture = Unmanaged<AnyObject>.fromOpaque(source).takeUnretainedValue() as? any MTLTexture,
-              let state = Unmanaged<AnyObject>.fromOpaque(pipeline).takeUnretainedValue() as? any MTLRenderPipelineState,
-              let nearestState = Unmanaged<AnyObject>.fromOpaque(nearest).takeUnretainedValue() as? any MTLSamplerState,
-              let linearState = Unmanaged<AnyObject>.fromOpaque(linear).takeUnretainedValue() as? any MTLSamplerState else { return 0 }
+              let texture = context.resources[source] as? any MTLTexture,
+              let state = context.resources[pipeline] as? any MTLRenderPipelineState,
+              let nearestState = context.resources[nearest] as? any MTLSamplerState,
+              let linearState = context.resources[linear] as? any MTLSamplerState else { return 0 }
         let fence = context.resources[fenceID] as? any MTLFence
         guard fenceID == 0 || fence != nil else { return 0 }
         guard let drawable = layer.nextDrawable() else { return 1 }
@@ -56,7 +55,7 @@ public func metallumPresent(_ handle: UnsafeMutableRawPointer?, _ commandID: UIn
         descriptor.colorAttachments[0].texture = target
         descriptor.colorAttachments[0].loadAction = .dontCare
         descriptor.colorAttachments[0].storeAction = .store
-        guard let encoder = command.makeRenderCommandEncoder(descriptor: descriptor) else { return 0 }
+        guard let encoder = command.metal.makeRenderCommandEncoder(descriptor: descriptor) else { return 0 }
         if let fence { encoder.waitForFence(fence, before: .fragment) }
         encoder.setViewport(MTLViewport(originX: 0, originY: 0, width: Double(target.width), height: Double(target.height), znear: 0, zfar: 1))
         encoder.setRenderPipelineState(state)
@@ -66,7 +65,10 @@ public func metallumPresent(_ handle: UnsafeMutableRawPointer?, _ commandID: UIn
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3, instanceCount: 1, baseInstance: 0)
         if let fence { encoder.updateFence(fence, after: .fragment) }
         encoder.endEncoding()
-        command.present(drawable)
+        command.metal.present(drawable)
+        for id in [source, fenceID, pipeline, nearest, linear, layerID] { command.hold(context.resources[id]) }
+        command.hold(drawable as AnyObject)
+        command.hold(target as AnyObject)
         return 1
     }
 }

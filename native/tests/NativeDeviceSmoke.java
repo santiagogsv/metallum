@@ -39,12 +39,12 @@ public final class NativeDeviceSmoke {
                 pipeline.close(); pipeline.close();
                 NativeMetalDevice.Resource texture = device.createTexture(70, 8, 8, 2, 4, false, true, "Texture test é");
                 try (var renderCommand = device.createCommandBuffer("Render pass lifecycle")) {
-                    var pass = device.createRenderPass(renderCommand, texture.borrowedHandle(), MemorySegment.NULL, 2, 0, new double[]{0.1,0.2,0.3,1,1});
+                    var pass = device.createRenderPass(renderCommand, texture, null, 2, 0, new double[]{0.1,0.2,0.3,1,1});
                     if (pass.borrowedHandle().address() == 0) throw new AssertionError("Null encoder");
-                    device.renderCommand(pass, 15, MemorySegment.NULL, MemorySegment.NULL,
+                    device.renderCommand(pass, 15, 0, 0,
                             0, 0, Double.doubleToRawLongBits(8), Double.doubleToRawLongBits(8), 0, Double.doubleToRawLongBits(1), 0, 0);
                     pass.close(); pass.close();
-                    try { device.createRenderPass(renderCommand, MemorySegment.NULL, MemorySegment.NULL, 1, 1, new double[]{0,0,0,0,1}); throw new AssertionError("Empty pass accepted"); }
+                    try { device.createRenderPass(renderCommand, null, null, 1, 1, new double[]{0,0,0,0,1}); throw new AssertionError("Empty pass accepted"); }
                     catch (IllegalStateException expected) { }
                     try (var submitted = device.submit(renderCommand)) {
                         if (!device.waitSubmission(submitted, Long.MAX_VALUE)) throw new AssertionError("Render submission timed out");
@@ -173,7 +173,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 12")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 13")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

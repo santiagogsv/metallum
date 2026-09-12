@@ -1,7 +1,7 @@
 package com.metallum.render;
 
+import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.mtl.*;
-import com.metallum.objc.ObjC;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.buffers.GpuFence;
@@ -15,7 +15,6 @@ import org.joml.Vector4fc;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
-import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
@@ -38,8 +37,8 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     private MTLCommandBuffer commandBuffer;
     @Nullable
     private MTLCommandEncoder currentEncoder;
-    private MemorySegment renderColorAttachment = MemorySegment.NULL;
-    private MemorySegment renderDepthAttachment = MemorySegment.NULL;
+    private NativeMetalDevice.Resource renderColorAttachment = null;
+    private NativeMetalDevice.Resource renderDepthAttachment = null;
     private final BoundedBufferPool<MTLBuffer> dynamicBackingPool = new BoundedBufferPool<>(64L * 1024 * 1024, 3, MTLBuffer::close);
 
     private long nextMemoryReport;
@@ -77,8 +76,8 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             currentEncoder.endEncoding();
             currentEncoder = null;
         }
-        renderColorAttachment = MemorySegment.NULL;
-        renderDepthAttachment = MemorySegment.NULL;
+        renderColorAttachment = null;
+        renderDepthAttachment = null;
     }
 
     @Override
@@ -129,11 +128,11 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             @Nullable final Vector4fc clearColor,
             @Nullable final Double clearDepth
     ) {
-        MemorySegment colorAttachment = colorTextureView.nativeHandle();
-        MemorySegment depthAttachment = depthTextureView == null ? MemorySegment.NULL : depthTextureView.nativeHandle();
+        NativeMetalDevice.Resource colorAttachment = colorTextureView.nativeResource();
+        NativeMetalDevice.Resource depthAttachment = depthTextureView == null ? null : depthTextureView.nativeResource();
         if (currentEncoder instanceof MTLRenderCommandEncoder enc
-                && MetalPipelineSupport.sameHandle(renderColorAttachment, colorAttachment)
-                && MetalPipelineSupport.sameHandle(renderDepthAttachment, depthAttachment)) {
+                && MetalPipelineSupport.sameResource(renderColorAttachment, colorAttachment)
+                && MetalPipelineSupport.sameResource(renderDepthAttachment, depthAttachment)) {
             if (clearColor != null || clearDepth != null) {
                 enc.clearDraw(
                         colorAttachment,
@@ -237,7 +236,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         submitRenderPass();
         endEncoder();
         MTLCommandBuffer commandBuffer = commandBuffer();
-        commandBuffer.encodePresentTextureToDrawable(layer, source.nativeHandle(), fence);
+        commandBuffer.encodePresentTextureToDrawable(layer, source.nativeResource(), fence);
     }
 
     @Override
@@ -277,9 +276,9 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         submitRenderPass();
         endEncoder();
         commandBuffer().clearColorDepthTexturesRegion(
-                color.nativeHandle(),
+                color.nativeResource(),
                 clearColorCopy,
-                depth.nativeHandle(),
+                depth.nativeResource(),
                 clearDepth,
                 regionX,
                 regionY,
@@ -322,7 +321,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         long size = buffer.allocationSize();
         MTLBuffer old = buffer.metalBuffer();
         MTLBuffer fresh = acquireDynamicBacking(size);
-        ByteBuffer freshStorage = ObjC.byteBufferView(fresh.contents(), size).order(ByteOrder.nativeOrder());
+        ByteBuffer freshStorage = fresh.contents().reinterpret(size).asByteBuffer().order(ByteOrder.nativeOrder());
 
         if (offset != 0 || data.remaining() != buffer.size()) {
             ByteBuffer previous = buffer.currentStorage();
@@ -603,9 +602,9 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
 
         endEncoder();
         MTLRenderCommandEncoder encoder = commandBuffer().makeRenderCommandEncoder(
-                colorClear != null ? texture.nativeHandle() : MemorySegment.NULL,
+                colorClear != null ? texture.nativeResource() : null,
                 colorClear,
-                depthClear != null ? texture.nativeHandle() : MemorySegment.NULL,
+                depthClear != null ? texture.nativeResource() : null,
                 depthClear,
                 1.0, 1.0
         );

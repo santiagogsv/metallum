@@ -8,12 +8,24 @@ final class DeviceContext {
     var buffers: [UInt64: MTLBuffer] = [:]
     var nextBufferID: UInt64 = 1
     lazy var commandQueue: (any MTLCommandQueue)? = device.makeCommandQueue()
+    // Empty sets may be reused only after a completed submission retires them.
+    var idleResidencySets: [any MTLResidencySet] = []
+    func acquireResidencySet() throws -> any MTLResidencySet {
+        if let set = idleResidencySets.popLast() { return set }
+        let descriptor = MTLResidencySetDescriptor()
+        descriptor.label = "Metallum command residency"
+        return try device.makeResidencySet(descriptor: descriptor)
+    }
+    func recycleResidencySet(_ set: any MTLResidencySet) {
+        set.removeAllAllocations(); set.commit()
+        if idleResidencySets.count < 3 { idleResidencySets.append(set) }
+    }
     let device: MTLDevice
     init(_ device: MTLDevice) { self.device = device }
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 12 }
+public func metallumABIVersion() -> UInt32 { 13 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {
@@ -98,5 +110,24 @@ public func metallumMemorySnapshot(_ handle: UnsafeMutableRawPointer?, _ output:
         output[2] = UInt64(context.shaderLibraries.count)
         output[3] = context.buffers.values.reduce(0) { $0 + UInt64($1.length) }
         output[4] = UInt64(context.device.currentAllocatedSize)
+    }
+}
+
+@c(metallum_device_info)
+public func metallumDeviceInfo(_ handle: UnsafeMutableRawPointer?, _ field: UInt32) -> UInt64 {
+    guard let handle else { return 0 }
+    let device = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue().device
+    switch field {
+    case 0: return UInt64(device.maxBufferLength)
+    case 1: return device.recommendedMaxWorkingSetSize
+    case 2: return device.supportsFamily(.metal4) ? 1 : 0
+    default: return 0
+    }
+}
+@c(metallum_device_name)
+public func metallumDeviceName(_ handle: UnsafeMutableRawPointer?, _ output: UnsafeMutablePointer<CChar>?, _ capacity: UInt32) {
+    autoreleasepool {
+        guard let handle else { return }
+        ShaderCompilation.writeError(Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue().device.name, to: output, capacity: capacity)
     }
 }

@@ -7,7 +7,6 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import org.jspecify.annotations.Nullable;
 
-import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,10 +15,8 @@ final class MetalPipelineSupport {
     private MetalPipelineSupport() {
     }
 
-    static boolean sameHandle(@Nullable final MemorySegment left, @Nullable final MemorySegment right) {
-        long leftValue = left == null ? 0L : left.address();
-        long rightValue = right == null ? 0L : right.address();
-        return leftValue == rightValue;
+    static boolean sameResource(com.metallum.nativebridge.NativeMetalDevice.Resource left, com.metallum.nativebridge.NativeMetalDevice.Resource right) {
+        return left == right;
     }
 
     static List<String> vertexAttributeNames(final RenderPipeline pipeline) {

@@ -1,7 +1,7 @@
 package com.metallum.render;
 
+import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.mtl.*;
-import com.metallum.objc.ObjC;
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.IndexType;
 import com.mojang.blaze3d.buffers.GpuBuffer;
@@ -470,7 +470,7 @@ final class MetalRenderPass implements RenderPassBackend {
         }
     }
 
-    private static void bindTexture(final MTLRenderCommandEncoder enc, final MemorySegment texture, final long index, final int stageMask) {
+    private static void bindTexture(final MTLRenderCommandEncoder enc, final NativeMetalDevice.Resource texture, final long index, final int stageMask) {
         if ((stageMask & MetalCompiledRenderPipeline.STAGE_VERTEX) != 0) {
             enc.setVertexTexture(texture, index);
         }
@@ -479,7 +479,7 @@ final class MetalRenderPass implements RenderPassBackend {
         }
     }
 
-    private static void bindTextureAndSampler(final MTLRenderCommandEncoder enc, final MemorySegment texture, final MemorySegment sampler, final long index, final int stageMask) {
+    private static void bindTextureAndSampler(final MTLRenderCommandEncoder enc, final NativeMetalDevice.Resource texture, final NativeMetalDevice.Resource sampler, final long index, final int stageMask) {
         if ((stageMask & MetalCompiledRenderPipeline.STAGE_VERTEX) != 0) {
             enc.setVertexTexture(texture, index);
             enc.setVertexSamplerState(sampler, index);
@@ -504,16 +504,16 @@ final class MetalRenderPass implements RenderPassBackend {
 
         if (pipelineDirty) {
             boolean useDepth = depthAttachmentFormat().value != MTLPixelFormat.Invalid.value;
-            MemorySegment pipelineHandle = compiledPipeline.getNativePipeline(useDepth);
-            if (ObjC.isNil(pipelineHandle)) {
+            NativeMetalDevice.Resource pipelineHandle = compiledPipeline.getNativePipeline(useDepth);
+            if ((pipelineHandle == null)) {
                 throw new IllegalStateException("Native pipeline is unavailable");
             }
             enc.setRenderPipelineState(pipelineHandle);
             pipelineDirty = false;
 
             if (useDepth) {
-                MemorySegment depthState = compiledPipeline.getDepthStencilState();
-                if (ObjC.isNil(depthState)) {
+                NativeMetalDevice.Resource depthState = compiledPipeline.getDepthStencilState();
+                if ((depthState == null)) {
                     throw new IllegalStateException("Native depth state is unavailable");
                 }
                 enc.setDepthStencilState(depthState);
@@ -605,7 +605,7 @@ final class MetalRenderPass implements RenderPassBackend {
 
             MetalGpuTextureView textureView = (MetalGpuTextureView) textureBinding.textureView();
             MetalGpuSampler sampler = (MetalGpuSampler) textureBinding.sampler();
-            bindTextureAndSampler(enc, textureView.nativeHandle(), sampler.nativeHandle(), binding.bindingIndex(), binding.stageMask());
+            bindTextureAndSampler(enc, textureView.nativeResource(), sampler.nativeResource(), binding.bindingIndex(), binding.stageMask());
             return;
         }
 
@@ -651,7 +651,7 @@ final class MetalRenderPass implements RenderPassBackend {
         var texture = texelBuffer.metalBuffer().nativeOwner().createTexture(pixelFormat, texelSlice.offset(), texelCount, texelByteLength);
         // Retire after submitted work, including when binding fails.
         commandEncoder.queueForDestroy(texture::close);
-        bindTexture(enc, texture.borrowedHandle(), binding.bindingIndex(), binding.stageMask());
+        bindTexture(enc, texture, binding.bindingIndex(), binding.stageMask());
     }
 
     record TextureViewAndSampler(GpuTextureView textureView, GpuSampler sampler) {

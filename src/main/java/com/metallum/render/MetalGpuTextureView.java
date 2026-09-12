@@ -7,14 +7,13 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import org.jspecify.annotations.Nullable;
 
-import java.lang.foreign.MemorySegment;
 
 @Environment(EnvType.CLIENT)
 final class MetalGpuTextureView extends GpuTextureView {
     private boolean closed;
     private NativeMetalDevice.Resource nativeOwner;
     @Nullable
-    private MemorySegment nativeHandle;
+    private NativeMetalDevice.Resource nativeResource;
 
     MetalGpuTextureView(final GpuTexture texture, final int baseMipLevel, final int mipLevels) {
         super(texture, baseMipLevel, mipLevels);
@@ -23,14 +22,14 @@ final class MetalGpuTextureView extends GpuTextureView {
         ((MetalGpuTexture) texture).addView();
     }
 
-    MemorySegment nativeHandle() {
+    NativeMetalDevice.Resource nativeResource() {
         if (this.closed) throw new IllegalStateException("Texture view is closed");
-        if (this.nativeHandle == null) {
+        if (this.nativeResource == null) {
             MetalGpuTexture texture = (MetalGpuTexture) this.texture();
             this.nativeOwner = texture.nativeOwner().createView(this.baseMipLevel(), this.mipLevels());
-            this.nativeHandle = this.nativeOwner.borrowedHandle();
+            this.nativeResource = this.nativeOwner;
         }
-        return this.nativeHandle;
+        return this.nativeResource;
     }
 
     @Override
@@ -42,7 +41,7 @@ final class MetalGpuTextureView extends GpuTextureView {
         MetalGpuTexture texture = (MetalGpuTexture) this.texture();
         if (this.nativeOwner != null) texture.queueNativeRelease(this.nativeOwner::close);
         this.nativeOwner = null;
-        this.nativeHandle = null;
+        this.nativeResource = null;
         texture.removeView();
     }
 

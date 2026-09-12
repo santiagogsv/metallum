@@ -51,7 +51,7 @@ public class MetalBackend implements GpuBackend {
         CAMetalLayer metalLayer = null;
         Cocoa cocoa = null;
         try {
-            MTLDevice metalDevice = new MTLDevice(nativeOwner.borrowedDevice(), nativeOwner);
+            MTLDevice metalDevice = new MTLDevice(nativeOwner);
             if (metalDevice == null) {
                 throw new BackendCreationException("MTLCreateSystemDefaultDevice returned null", BackendCreationException.Reason.OTHER);
             }
@@ -76,10 +76,10 @@ public class MetalBackend implements GpuBackend {
 
             cocoa.setViewLayer(metalLayer.handle());
 
-            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, "Swift resources, draw encoding and presentation, ABI 12");
+            Metallum.LOGGER.info("Metal device: {} (ownership: {})", deviceName, "Swift resources, draw encoding and presentation, ABI 13");
 
             try {
-                MetalDevice backend = new MetalDevice(defaultShaderSource, debugOptions, metalDevice.handle(), metalLayer, deviceName, cocoa,
+                MetalDevice backend = new MetalDevice(defaultShaderSource, debugOptions, metalLayer, deviceName, cocoa,
                         nativeOwner::close, nativeOwner);
                 try {
                     GpuDevice result = new GpuDevice(backend, criticalShaderLoader);
