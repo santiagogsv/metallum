@@ -21,7 +21,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
-    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait;
+    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait, commandCreate;
     private final MemorySegment borrowedDevice;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
@@ -32,7 +32,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 8) throw new IllegalStateException("Expected Metallum native ABI 8, found " + abiVersion);
+            if (abiVersion != 9) throw new IllegalStateException("Expected Metallum native ABI 9, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             MethodHandle borrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -57,8 +57,9 @@ public final class NativeMetalDevice implements AutoCloseable {
             presentSamplerCreate = linker.downcallHandle(symbols.findOrThrow("metallum_present_sampler_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT));
             bufferTextureCreate = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_texture_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG));
             memorySnapshot = linker.downcallHandle(symbols.findOrThrow("metallum_memory_snapshot"), FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
-            submit = linker.downcallHandle(symbols.findOrThrow("metallum_submit"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS));
+            submit = linker.downcallHandle(symbols.findOrThrow("metallum_submit"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG));
             submissionWait = linker.downcallHandle(symbols.findOrThrow("metallum_submission_wait"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT));
+            commandCreate = linker.downcallHandle(symbols.findOrThrow("metallum_command_buffer_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS));
             context = (MemorySegment) create.invokeExact();
             if (context.address() == 0) throw new IllegalStateException("Swift could not create a Metal device");
             try {
@@ -164,9 +165,18 @@ public final class NativeMetalDevice implements AutoCloseable {
         } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal memory", failure); }
     }
 
-    public Resource submit(MemorySegment command) {
+    public Resource createCommandBuffer(String label) {
         checkOpen();
-        try { return ownResource((long) submit.invokeExact(context, command)); }
+        try (Arena call = Arena.ofConfined()) {
+            var name = label == null ? MemorySegment.NULL : call.allocateFrom(label);
+            return ownResource((long) commandCreate.invokeExact(context, name));
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot create native command buffer", failure); }
+    }
+
+    public Resource submit(Resource command) {
+        command.checkResource();
+        if (command.owner() != this) throw new IllegalArgumentException("Command belongs to another device");
+        try { return ownResource((long) submit.invokeExact(context, command.id)); }
         catch (Throwable failure) { throw new IllegalStateException("Cannot submit Metal command buffer", failure); }
     }
 

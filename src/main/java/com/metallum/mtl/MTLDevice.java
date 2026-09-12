@@ -14,7 +14,6 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 @Environment(EnvType.CLIENT)
 public record MTLDevice(MemorySegment handle, NativeMetalDevice nativeOwner) {
-    private static final Msg NEW_COMMAND_QUEUE = Msg.of("newCommandQueue", ADDRESS);
     private static final Msg NEW_FENCE = Msg.of("newFence", ADDRESS);
     private static final Msg NAME = Msg.of("name", ADDRESS);
     private static final Msg MAX_BUFFER_LENGTH = Msg.of("maxBufferLength", JAVA_LONG);
@@ -38,14 +37,6 @@ public record MTLDevice(MemorySegment handle, NativeMetalDevice nativeOwner) {
 
     public long recommendedMaxWorkingSetSize() {
         return RECOMMENDED_MAX_WORKING_SET_SIZE.sendLong(handle);
-    }
-
-    public MTLCommandQueue newCommandQueue() {
-        MemorySegment queue = NEW_COMMAND_QUEUE.sendPtr(handle);
-        if (ObjC.isNil(queue)) {
-            throw new IllegalStateException("newCommandQueue returned nil");
-        }
-        return new MTLCommandQueue(queue, nativeOwner);
     }
 
     public MTLFence newFence() {

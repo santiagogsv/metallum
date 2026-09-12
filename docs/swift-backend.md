@@ -1,6 +1,6 @@
 # Incremental Swift backend
 
-This page records the original architecture and milestone 1. The current migration is [milestone 8](swift-submission.md), with Swift submission completion. [Milestone 7](swift-memory.md) added bounded buffer caching and memory diagnostics. [Milestone 6](swift-packaging.md) bundled the native library and removed the Java fallback. The opt-in instructions below are historical. See [milestone 2](swift-buffers.md) for the current macOS 27 target, supported `@c` exports, ABI 2, buffer ownership, and MSL 4.1 changes.
+This page records the original architecture and milestone 1. The current migration is [milestone 9](swift-command-ownership.md), with Swift command queue/buffer ownership. [Milestone 7](swift-memory.md) added bounded buffer caching and memory diagnostics. [Milestone 6](swift-packaging.md) bundled the native library and removed the Java fallback. The opt-in instructions below are historical. See [milestone 2](swift-buffers.md) for the current macOS 27 target, supported `@c` exports, ABI 2, buffer ownership, and MSL 4.1 changes.
 
 ## Current architecture
 

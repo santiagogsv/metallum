@@ -7,12 +7,13 @@ final class DeviceContext {
     var nextResourceID: UInt64 = 1
     var buffers: [UInt64: MTLBuffer] = [:]
     var nextBufferID: UInt64 = 1
+    lazy var commandQueue: (any MTLCommandQueue)? = device.makeCommandQueue()
     let device: MTLDevice
     init(_ device: MTLDevice) { self.device = device }
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 8 }
+public func metallumABIVersion() -> UInt32 { 9 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {

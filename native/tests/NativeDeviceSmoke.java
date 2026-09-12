@@ -102,9 +102,13 @@ public final class NativeDeviceSmoke {
                 catch (IllegalStateException expected) { }
                 try { device.createBuffer(0, true); throw new AssertionError("Zero allocation accepted"); }
                 catch (IllegalArgumentException expected) { }
-                if (args.length > 1) { // CPU fixture only; never pass a fake object to Metal.
-                    var submission = device.submit(java.lang.foreign.MemorySegment.ofAddress(1));
-                    if (!device.waitSubmission(submission, 0) || !device.waitSubmission(submission, 1000)) throw new AssertionError("Submission wait not repeatable");
+                {
+                    var command = device.createCommandBuffer("Submission lifecycle test");
+                    var submission = device.submit(command);
+                    try { device.submit(command); throw new AssertionError("Double submit accepted"); }
+                    catch (IllegalStateException expected) { }
+                    command.close();
+                    if (!device.waitSubmission(submission, 5000) || !device.waitSubmission(submission, 0)) throw new AssertionError("Submission wait not repeatable");
                     submission.close(); submission.close();
                     try { device.waitSubmission(submission, 0); throw new AssertionError("Closed submission accepted"); }
                     catch (IllegalStateException expected) { }
@@ -139,7 +143,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 8")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 9")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

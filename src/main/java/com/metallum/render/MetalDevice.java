@@ -42,7 +42,6 @@ final class MetalDevice implements GpuDeviceBackend {
     private final GpuDebugOptions debugOptions;
     private final MetalCommandEncoder commandEncoder;
     private final DeviceInfo deviceInfo;
-    public final MTLCommandQueue commandQueue;
     private final Map<RenderPipeline, MetalCompiledRenderPipeline> compiledPipelines = new IdentityHashMap<>();
     private final Map<ShaderCompilationKey, IntermediaryShaderModule> shaderCache = new HashMap<>();
     private final Map<MslFunctionKey, MTLFunction> functionCache = new HashMap<>();
@@ -67,8 +66,6 @@ final class MetalDevice implements GpuDeviceBackend {
         this.metalDevice = new MTLDevice(metalDeviceHandle, nativeOwner);
         this.metalLayer = metalLayer;
         this.cocoa = cocoa;
-        MTLCommandQueue.setDebugLabelsEnabled(this.useLabels());
-        this.commandQueue = this.metalDevice.newCommandQueue();
         MTLBuiltinPipelines.init(this.metalDevice);
         this.commandEncoder = new MetalCommandEncoder(this);
         this.deviceInfo = buildDeviceInfo(deviceName);
@@ -191,7 +188,6 @@ final class MetalDevice implements GpuDeviceBackend {
         }
         this.metalLayer.close();
         MTLBuiltinPipelines.close();
-        this.commandQueue.close();
         for (var state : depthStencilStates.values()) {
             state.close();
         }

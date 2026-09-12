@@ -25,11 +25,13 @@ public final class MTLCommandBuffer {
 
     private MemorySegment handle;
     private final NativeMetalDevice nativeDevice;
+    private final NativeMetalDevice.Resource command;
     private NativeMetalDevice.Resource submission;
 
-    MTLCommandBuffer(final MemorySegment handle, NativeMetalDevice nativeDevice) {
+    public MTLCommandBuffer(NativeMetalDevice nativeDevice, String label) {
         this.nativeDevice = nativeDevice;
-        this.handle = handle;
+        this.command = nativeDevice.createCommandBuffer(label);
+        this.handle = command.borrowedHandle();
     }
 
     public MTLBlitCommandEncoder makeBlitCommandEncoder() {
@@ -132,7 +134,7 @@ public final class MTLCommandBuffer {
 
     public void commit() {
         if (submission != null) throw new IllegalStateException("Command buffer already submitted");
-        submission = nativeDevice.submit(handle());
+        submission = nativeDevice.submit(command);
     }
 
     public boolean waitUntilCompleted(final long timeoutMs) {
@@ -157,7 +159,7 @@ public final class MTLCommandBuffer {
             return;
         }
         if (submission != null) { submission.close(); submission = null; }
-        ObjC.release(handle);
+        command.close();
         handle = MemorySegment.NULL;
     }
 

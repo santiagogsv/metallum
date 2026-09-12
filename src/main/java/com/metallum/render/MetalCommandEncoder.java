@@ -55,7 +55,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         if (commandBuffer != null) {
             return commandBuffer;
         }
-        return commandBuffer = device.commandQueue.makeCommandBuffer(
+        return commandBuffer = new MTLCommandBuffer(device.nativeOwner(),
                 device.useLabels() ? "Metallum frame " + currentSubmitIndex : null
         );
     }

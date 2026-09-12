@@ -32,14 +32,24 @@ final class NativeSubmission {
     deinit { command.waitUntilCompleted() }
 }
 
-@c(metallum_submit)
-public func metallumSubmit(_ handle: UnsafeMutableRawPointer?, _ commandPointer: UnsafeMutableRawPointer?) -> UInt64 {
+@c(metallum_command_buffer_create)
+public func metallumCommandBufferCreate(_ handle: UnsafeMutableRawPointer?, _ label: UnsafePointer<CChar>?) -> UInt64 {
     autoreleasepool {
-        guard let handle, let commandPointer,
-              let command = Unmanaged<AnyObject>.fromOpaque(commandPointer).takeUnretainedValue() as? any MTLCommandBuffer,
-              command.status == .notEnqueued || command.status == .enqueued else { return 0 }
+        guard let handle else { return 0 }
         let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
-        guard command.device === context.device else { return 0 }
+        guard let command = context.commandQueue?.makeCommandBuffer() else { return 0 }
+        if let label { command.label = String(cString: label) }
+        return context.storeResource(command as AnyObject)
+    }
+}
+
+@c(metallum_submit)
+public func metallumSubmit(_ handle: UnsafeMutableRawPointer?, _ commandID: UInt64) -> UInt64 {
+    autoreleasepool {
+        guard let handle else { return 0 }
+        let context = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue()
+        guard let command = context.resources[commandID] as? any MTLCommandBuffer,
+              command.status == .notEnqueued || command.status == .enqueued else { return 0 }
         // Reserve the ID before constructing an owner that waits during destruction.
         guard context.nextResourceID < UInt64.max else { return 0 }
         let submission = NativeSubmission(command)
