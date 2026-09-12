@@ -244,6 +244,12 @@ final class MetalDevice implements GpuDeviceBackend {
         this.commandEncoder.waitForSubmittedGpuWork();
     }
 
+    NativeMetalDevice nativeOwner() { return this.nativeOwner; }
+
+    void queueNativeRelease(Runnable release) {
+        this.commandEncoder.queueForDestroy(release);
+    }
+
     MTLBuffer allocateBuffer(long size, boolean cpuAccessible) {
         if (nativeOwner != null) return new MTLBuffer(nativeOwner.createBuffer(size, cpuAccessible));
         return metalDevice.newBuffer(size, MTLResourceOptions.of(

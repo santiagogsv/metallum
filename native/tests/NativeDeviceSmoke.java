@@ -10,6 +10,33 @@ public final class NativeDeviceSmoke {
             NativeMetalDevice device = new NativeMetalDevice(library);
             try (device) {
                 if (device.borrowedDevice().address() == 0) throw new AssertionError("Null borrowed device");
+                NativeMetalDevice.Resource texture = device.createTexture(70, 8, 8, 2, 4, false, true, "Texture test é");
+                try (var fullView = texture.createView(0, 4); var partialView = texture.createView(1, 2);
+                     var sampler = device.createSampler(true, false, true, false, 16, 8.5)) {
+                    if (texture.borrowedHandle().address() == 0 || sampler.borrowedHandle().address() == 0) throw new AssertionError("Null resource");
+                    try { texture.createView(3, 2); throw new AssertionError("Out-of-bounds mip range accepted"); }
+                    catch (IllegalStateException expected) { }
+                    try { sampler.createView(0, 1); throw new AssertionError("Sampler accepted as a texture"); }
+                    catch (IllegalStateException expected) { }
+                    AtomicReference<Throwable> result = new AtomicReference<>();
+                    Thread thread = new Thread(() -> {
+                        try { sampler.close(); result.set(new AssertionError("Cross-thread resource close accepted")); }
+                        catch (IllegalStateException expected) { }
+                        catch (Throwable failure) { result.set(failure); }
+                    });
+                    thread.start();
+                    try { thread.join(); } catch (InterruptedException e) { throw new AssertionError(e); }
+                    if (result.get() != null) throw new AssertionError(result.get());
+                    texture.close();
+                    if (fullView.borrowedHandle().address() == 0 || partialView.borrowedHandle().address() == 0) throw new AssertionError("View lost after parent closed");
+                }
+                texture.close();
+                try { texture.borrowedHandle(); throw new AssertionError("Closed texture accepted"); }
+                catch (IllegalStateException expected) { }
+                try { device.createTexture(70, 8, 4, 6, 1, true, false, null); throw new AssertionError("Invalid cube accepted"); }
+                catch (IllegalArgumentException expected) { }
+                try { device.createSampler(false, false, false, false, 17, 0); throw new AssertionError("Invalid anisotropy accepted"); }
+                catch (IllegalArgumentException expected) { }
                 NativeMetalDevice.Buffer shared = device.createBuffer(64, true);
                 try (shared; var gpuOnly = device.createBuffer(64, false)) {
                     if (shared.length() != 64 || shared.borrowedBuffer().address() == 0) throw new AssertionError("Invalid shared buffer");
@@ -43,7 +70,11 @@ public final class NativeDeviceSmoke {
         }
         NativeMetalDevice owner = new NativeMetalDevice(library);
         var survivor = owner.createBuffer(64, true);
+        var resourceSurvivor = owner.createTexture(70, 8, 8, 1, 1, false, false, null);
         owner.close();
+        resourceSurvivor.close();
+        try { resourceSurvivor.borrowedHandle(); throw new AssertionError("Closed device resource accepted"); }
+        catch (IllegalStateException expected) { }
         survivor.close(); // Already destroyed by its device, must not call into an unloaded library.
         try { survivor.borrowedBuffer(); throw new AssertionError("Closed owner accepted"); }
         catch (IllegalStateException expected) { }
@@ -56,7 +87,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 2")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 3")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

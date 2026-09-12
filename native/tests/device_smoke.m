@@ -8,7 +8,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 2);
+        assert(metallum_abi_version() == 3);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -37,6 +37,43 @@ int main(void) {
             metallum_buffer_destroy(context, shared);
             assert(metallum_buffer_borrow_mtl(context, shared) == NULL);
             assert(metallum_buffer_contents(context, shared) == NULL);
+            uint32_t layer_counts[] = {1, 3, 6, 12};
+            MTLTextureType types[] = {MTLTextureType2D, MTLTextureType2DArray, MTLTextureTypeCube, MTLTextureTypeCubeArray};
+            for (int shape = 0; shape < 4; shape++) {
+                uint64_t texture_id = metallum_texture_create(context, MTLPixelFormatRGBA8Unorm, 8, 8, layer_counts[shape], 4,
+                                                              shape >= 2, 1, "Native texture test");
+                assert(texture_id);
+                id<MTLTexture> texture = (__bridge id<MTLTexture>)metallum_resource_borrow_mtl(context, texture_id);
+                assert(texture.width == 8 && texture.height == 8 && texture.mipmapLevelCount == 4);
+                assert(texture.textureType == types[shape]);
+                assert(texture.arrayLength == (shape >= 2 ? layer_counts[shape] / 6 : layer_counts[shape]));
+                assert(texture.storageMode == MTLStorageModePrivate && texture.hazardTrackingMode == MTLHazardTrackingModeUntracked);
+                assert(texture.usage == (MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget));
+                assert([texture.label isEqualToString:@"Native texture test"]);
+                uint64_t full_id = metallum_texture_view_create(context, texture_id, 0, 4);
+                uint64_t partial_id = metallum_texture_view_create(context, texture_id, 1, 2);
+                assert(full_id && partial_id);
+                id<MTLTexture> partial = (__bridge id<MTLTexture>)metallum_resource_borrow_mtl(context, partial_id);
+                assert(partial.width == 4 && partial.mipmapLevelCount == 2 && partial.textureType == types[shape]);
+                assert(metallum_texture_view_create(context, texture_id, 3, 2) == 0);
+                assert(metallum_texture_view_create(context, texture_id, UINT32_MAX, 1) == 0);
+                texture = nil; partial = nil;
+                metallum_resource_destroy(context, texture_id);
+                assert(metallum_resource_borrow_mtl(context, texture_id) == NULL);
+                id<MTLTexture> surviving = (__bridge id<MTLTexture>)metallum_resource_borrow_mtl(context, full_id);
+                assert(surviving.width == 8);
+                surviving = nil;
+                metallum_resource_destroy(context, full_id);
+                metallum_resource_destroy(context, partial_id);
+                metallum_resource_destroy(context, partial_id);
+            }
+            assert(metallum_texture_create(context, MTLPixelFormatRGBA8Unorm, 8, 4, 6, 1, 1, 0, NULL) == 0);
+            assert(metallum_texture_create(context, MTLPixelFormatRGBA8Unorm, 8, 8, 1, 5, 0, 0, NULL) == 0);
+            assert(metallum_sampler_create(context, 0, 0, 0, 0, 17, 0) == 0);
+            uint64_t sampler = metallum_sampler_create(context, 1, 0, 1, 0, 16, 8.5);
+            assert(sampler && metallum_resource_borrow_mtl(context, sampler));
+            assert(metallum_texture_view_create(context, sampler, 0, 1) == 0);
+            // Device teardown owns this sampler as well as the private buffer.
             // Leave the private buffer alive to exercise device-owned cleanup.
             if (i == 0) printf("Native device: %s\n", device.name.UTF8String);
             buffer = nil;

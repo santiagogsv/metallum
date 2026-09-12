@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
+import static java.lang.foreign.ValueLayout.JAVA_DOUBLE;
 
 /** Render-thread-confined owner of the Swift context and its loaded library. */
 public final class NativeMetalDevice implements AutoCloseable {
@@ -18,6 +19,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final Thread ownerThread = Thread.currentThread();
     private final MethodHandle destroy;
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
+    private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MemorySegment borrowedDevice;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
@@ -28,7 +30,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 2) throw new IllegalStateException("Expected Metallum native ABI 2, found " + abiVersion);
+            if (abiVersion != 3) throw new IllegalStateException("Expected Metallum native ABI 3, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             MethodHandle borrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -36,6 +38,14 @@ public final class NativeMetalDevice implements AutoCloseable {
             bufferBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_LONG));
             bufferContents = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_contents"), FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_LONG));
             bufferDestroy = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_destroy"), FunctionDescriptor.ofVoid(ADDRESS, JAVA_LONG));
+            textureCreate = linker.downcallHandle(symbols.findOrThrow("metallum_texture_create"), FunctionDescriptor.of(JAVA_LONG,
+                    ADDRESS, JAVA_LONG, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, ADDRESS));
+            textureViewCreate = linker.downcallHandle(symbols.findOrThrow("metallum_texture_view_create"), FunctionDescriptor.of(JAVA_LONG,
+                    ADDRESS, JAVA_LONG, JAVA_INT, JAVA_INT));
+            samplerCreate = linker.downcallHandle(symbols.findOrThrow("metallum_sampler_create"), FunctionDescriptor.of(JAVA_LONG,
+                    ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_DOUBLE));
+            resourceBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_resource_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_LONG));
+            resourceDestroy = linker.downcallHandle(symbols.findOrThrow("metallum_resource_destroy"), FunctionDescriptor.ofVoid(ADDRESS, JAVA_LONG));
             context = (MemorySegment) create.invokeExact();
             if (context.address() == 0) throw new IllegalStateException("Swift could not create a Metal device");
             try {
@@ -82,6 +92,77 @@ public final class NativeMetalDevice implements AutoCloseable {
             }
         } catch (Throwable failure) {
             throw new IllegalStateException("Cannot create Swift Metal buffer", failure);
+        }
+    }
+
+    public Resource createTexture(long pixelFormat, int width, int height, int layers, int mips,
+                                  boolean cube, boolean renderTarget, String label) {
+        checkOpen();
+        if (width <= 0 || height <= 0 || layers <= 0 || mips <= 0) throw new IllegalArgumentException("Invalid texture dimensions");
+        if (cube && (layers % 6 != 0 || width != height)) throw new IllegalArgumentException("Invalid cube texture dimensions");
+        try (Arena strings = Arena.ofConfined()) {
+            MemorySegment name = label == null ? MemorySegment.NULL : strings.allocateFrom(label);
+            long id = (long) textureCreate.invokeExact(context, pixelFormat, width, height, layers, mips,
+                    cube ? 1 : 0, renderTarget ? 1 : 0, name);
+            return ownResource(id);
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot create Swift Metal texture", failure); }
+    }
+
+    public Resource createSampler(boolean repeatU, boolean repeatV, boolean linearMin, boolean linearMag, int anisotropy, double maxLod) {
+        checkOpen();
+        if (anisotropy < 1 || anisotropy > 16) throw new IllegalArgumentException("Anisotropy must be between 1 and 16");
+        try {
+            long id = (long) samplerCreate.invokeExact(context, repeatU ? 1 : 0, repeatV ? 1 : 0,
+                    linearMin ? 1 : 0, linearMag ? 1 : 0, anisotropy, maxLod);
+            return ownResource(id);
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot create Swift Metal sampler", failure); }
+    }
+
+    private Resource ownResource(long id) throws Throwable {
+        if (id == 0) throw new IllegalStateException("Swift Metal resource creation failed");
+        try {
+            MemorySegment borrowed = (MemorySegment) resourceBorrow.invokeExact(context, id);
+            if (borrowed.address() == 0) throw new IllegalStateException("Native resource is missing");
+            return new Resource(id, borrowed);
+        } catch (Throwable failure) {
+            resourceDestroy.invokeExact(context, id);
+            throw failure;
+        }
+    }
+
+    /** An owning resource ID with a cached, temporary pointer for the Java command encoder. */
+    public final class Resource implements AutoCloseable {
+        private final long id;
+        private final MemorySegment borrowed;
+        private boolean released;
+
+        private Resource(long id, MemorySegment borrowed) { this.id = id; this.borrowed = borrowed; }
+
+        private void checkResource() {
+            checkOpen();
+            if (released) throw new IllegalStateException("Native resource is closed");
+        }
+
+        public MemorySegment borrowedHandle() { checkResource(); return borrowed; }
+
+        public Resource createView(int baseMip, int mipCount) {
+            checkResource();
+            if (baseMip < 0 || mipCount <= 0) throw new IllegalArgumentException("Invalid mip range");
+            try {
+                long view = (long) textureViewCreate.invokeExact(context, id, baseMip, mipCount);
+                return ownResource(view);
+            } catch (Throwable failure) { throw new IllegalStateException("Cannot create Swift Metal texture view", failure); }
+        }
+
+        @Override
+        public void close() {
+            checkThread();
+            if (released) return;
+            if (!closed) {
+                try { resourceDestroy.invokeExact(context, id); }
+                catch (Throwable failure) { throw new IllegalStateException("Cannot destroy Swift Metal resource", failure); }
+            }
+            released = true;
         }
     }
 

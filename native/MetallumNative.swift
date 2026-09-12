@@ -1,7 +1,9 @@
 import Foundation
 import Metal
 
-private final class DeviceContext {
+final class DeviceContext {
+    var resources: [UInt64: AnyObject] = [:]
+    var nextResourceID: UInt64 = 1
     var buffers: [UInt64: MTLBuffer] = [:]
     var nextBufferID: UInt64 = 1
     let device: MTLDevice
@@ -9,7 +11,7 @@ private final class DeviceContext {
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 2 }
+public func metallumABIVersion() -> UInt32 { 3 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {
