@@ -25,7 +25,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     // Reused only on the confined render thread; calls consume the words synchronously.
     private final MemorySegment drawWords = arena.allocate(64, 8);
     private final MemorySegment copyWords = arena.allocate(128, 8);
-    private final MemorySegment copyError = arena.allocate(4096);
+    private final MemorySegment callError = arena.allocate(4096);
     public static final int INDEXED_BATCH_CAPACITY = 256;
     private final MemorySegment indexedBatch = arena.allocate(INDEXED_BATCH_CAPACITY * 16L, 8);
     private final MethodHandle deviceBorrow;
@@ -237,10 +237,9 @@ public final class NativeMetalDevice implements AutoCloseable {
     public void upscale(Resource command, Resource source, Resource destination, Resource fence) {
         checkOpen();
         long c = command.id(this), s = source.id(this), d = destination.id(this), f = fence.id(this);
-        try (Arena call = Arena.ofConfined()) {
-            var error = call.allocate(4096);
-            int result = (int) upscale.invokeExact(context, c, s, d, f, error, 4096);
-            if (result != 1) throw new IllegalStateException("MetalFX: " + error.getString(0));
+        try {
+            int result = (int) upscale.invokeExact(context, c, s, d, f, callError, 4096);
+            if (result != 1) throw new IllegalStateException("MetalFX: " + callError.getString(0));
         } catch (Throwable failure) { throw new IllegalStateException("Cannot upscale with MetalFX", failure); }
     }
     public void clearUpscaler() {
@@ -291,13 +290,16 @@ public final class NativeMetalDevice implements AutoCloseable {
     }
 
     public Resource createRenderPass(Resource command, Resource color, Resource depth,
-                                     int colorLoad, int depthLoad, double[] clear) {
+                                     int colorLoad, int depthLoad, double red, double green, double blue, double alpha, double clearDepth) {
         checkOpen();
         long commandID = command.id(this);
-        if (clear.length != 5) throw new IllegalArgumentException("Expected five clear values");
-        try (Arena scratch = Arena.ofConfined()) {
-            MemorySegment values = scratch.allocateFrom(JAVA_DOUBLE, clear);
-            return ownResource((long) renderPassCreate.invokeExact(context, commandID, color == null ? 0L : color.id(this), depth == null ? 0L : depth.id(this), colorLoad, depthLoad, values));
+        drawWords.setAtIndex(JAVA_DOUBLE, 0, red);
+        drawWords.setAtIndex(JAVA_DOUBLE, 1, green);
+        drawWords.setAtIndex(JAVA_DOUBLE, 2, blue);
+        drawWords.setAtIndex(JAVA_DOUBLE, 3, alpha);
+        drawWords.setAtIndex(JAVA_DOUBLE, 4, clearDepth);
+        try {
+            return ownResource((long) renderPassCreate.invokeExact(context, commandID, color == null ? 0L : color.id(this), depth == null ? 0L : depth.id(this), colorLoad, depthLoad, drawWords));
         } catch (Throwable failure) { throw new IllegalStateException("Cannot create Metal render pass", failure); }
     }
 
@@ -311,8 +313,8 @@ public final class NativeMetalDevice implements AutoCloseable {
         if (command.owner() != this || fence.owner() != this || words.length != 16) throw new IllegalArgumentException("Invalid copy owner or payload");
         for (int i = 0; i < 16; i++) copyWords.setAtIndex(JAVA_LONG, i, words[i]);
         try {
-            int success = (int) copyPass.invokeExact(context, command.id, fence.id, copyWords, words.length, copyError, 4096);
-            if (success == 0) throw new IllegalStateException(copyError.getString(0));
+            int success = (int) copyPass.invokeExact(context, command.id, fence.id, copyWords, words.length, callError, 4096);
+            if (success == 0) throw new IllegalStateException(callError.getString(0));
         } catch (Throwable failure) { throw new IllegalStateException("Metal copy failed", failure); }
     }
 
@@ -334,10 +336,9 @@ public final class NativeMetalDevice implements AutoCloseable {
     public boolean waitSubmission(Resource submission, long timeoutMs) {
         submission.checkResource();
         if (submission.owner() != this) throw new IllegalArgumentException("Submission belongs to another device");
-        try (Arena call = Arena.ofConfined()) {
-            var error = call.allocate(4096);
-            int result = (int) submissionWait.invokeExact(context, submission.id, timeoutMs, error, 4096);
-            if (result < 0) throw new IllegalStateException(error.getString(0));
+        try {
+            int result = (int) submissionWait.invokeExact(context, submission.id, timeoutMs, callError, 4096);
+            if (result < 0) throw new IllegalStateException(callError.getString(0));
             return result == 1;
         } catch (Throwable failure) { throw new IllegalStateException("Metal submission wait failed", failure); }
     }

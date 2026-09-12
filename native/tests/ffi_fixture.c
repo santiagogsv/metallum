@@ -179,9 +179,12 @@ int32_t metallum_copy_pass(void *context, uint64_t command, uint64_t fence, cons
     }
     return 1;
 }
+static double last_clear[5];
+void metallum_test_last_clear(double *out) { memcpy(out, last_clear, sizeof(last_clear)); }
 uint64_t metallum_render_pass_create(void *context, uint64_t command, uint64_t color, uint64_t depth, uint32_t color_load, uint32_t depth_load, const double *clear) {
     Context *c = context;
     if (!c || command >= 256 || !c->resources[command] || c->resources[command]->kind != 7 || (!color && !depth) || !clear || color_load > 2 || depth_load > 2) return 0;
+    memcpy(last_clear, clear, sizeof(last_clear));
     Resource *r = calloc(1, sizeof(Resource)); assert(r); r->kind = 9;
     return store_resource(c, r);
 }

@@ -39,9 +39,10 @@ public final class MTLCommandBuffer {
     // Load actions: discard=0, preserve=1, clear=2. Swift owns all descriptor policy.
     MTLRenderCommandEncoder makeRenderCommandEncoder(NativeMetalDevice.Resource color, int colorLoad,
             @Nullable Vector4fc clearColor, NativeMetalDevice.Resource depth, int depthLoad, @Nullable Double clearDepth) {
-        double[] clear = clearColor == null ? new double[]{0, 0, 0, 0, clearDepth == null ? 1 : clearDepth}
-                : new double[]{clearColor.x(), clearColor.y(), clearColor.z(), clearColor.w(), clearDepth == null ? 1 : clearDepth};
-        return new MTLRenderCommandEncoder(nativeDevice, nativeDevice.createRenderPass(command, color, depth, colorLoad, depthLoad, clear));
+        return new MTLRenderCommandEncoder(nativeDevice, nativeDevice.createRenderPass(command, color, depth,
+                colorLoad, depthLoad, clearColor == null ? 0 : clearColor.x(),
+                clearColor == null ? 0 : clearColor.y(), clearColor == null ? 0 : clearColor.z(),
+                clearColor == null ? 0 : clearColor.w(), clearDepth == null ? 1 : clearDepth));
     }
 
     public MTLRenderCommandEncoder makeRenderCommandEncoder(NativeMetalDevice.Resource color, @Nullable Vector4fc clearColor,

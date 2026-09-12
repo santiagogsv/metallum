@@ -34,7 +34,7 @@ public class RenderAdapterSmoke {
                  var buffer = new MTLBuffer(device.createBuffer(128, true));
                  var indirect = new MTLBuffer(device.createBuffer(128, true));
                  var fence = new MTLFence(device.createFence())) {
-                var pass = device.createRenderPass(command, texture, null, 1, 0, new double[]{0,0,0,0,1});
+                var pass = device.createRenderPass(command, texture, null, 1, 0, 0,0,0,0,1);
                 var encoder = new MTLRenderCommandEncoder(device, pass);
                 NativeMetalDevice.Resource ptr = texture; // Fixture records pointers without interpreting Metal types.
                 check(() -> encoder.setRenderPipelineState(ptr), 0, ptr.id(device), 0);
@@ -61,6 +61,19 @@ public class RenderAdapterSmoke {
                 check(() -> encoder.updateFence(fence, MTLRenderStages.Fragment), 21, fence.owner().id(device), 0, 2);
                 check(() -> encoder.waitForFence(fence, MTLRenderStages.VertexAndFragment), 22, fence.owner().id(device), 0, 3);
                 var symbols = SymbolLookup.libraryLookup(fixture, arena);
+                var clearSnapshot = Linker.nativeLinker().downcallHandle(symbols.findOrThrow("metallum_test_last_clear"), FunctionDescriptor.ofVoid(ADDRESS));
+                // Render words and pass clears share scratch: interleave integer and double payloads.
+                for (int repeat = 0; repeat < 3; repeat++) {
+                    encoder.setScissorRect(1, 2, 3, 4);
+                    try (var nextPass = device.createRenderPass(command, texture, null, 2, 0,
+                            0.125 * repeat, 0.25, 0.5, 1, 0.75)) {
+                        clearSnapshot.invokeExact(output);
+                        double[] expectedClear = {0.125 * repeat, 0.25, 0.5, 1, 0.75};
+                        for (int i = 0; i < 5; i++) if (output.getAtIndex(JAVA_DOUBLE, i) != expectedClear[i])
+                            throw new AssertionError("Reused clear payload argument " + i);
+                    }
+                    check(() -> encoder.setCullMode(MTLCullMode.Back), 4, 0, 0, 2);
+                }
                 var batchStats = Linker.nativeLinker().downcallHandle(symbols.findOrThrow("metallum_test_batch_stats"), FunctionDescriptor.ofVoid(ADDRESS));
                 var resetBatch = Linker.nativeLinker().downcallHandle(symbols.findOrThrow("metallum_test_reset_batch"), FunctionDescriptor.ofVoid());
                 var parameters = java.nio.IntBuffer.allocate(258 * 3);
