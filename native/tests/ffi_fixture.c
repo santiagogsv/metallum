@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; uint64_t length; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 14
+#define TEST_ABI_VERSION 15
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -219,3 +219,8 @@ int32_t metallum_command_debug(void *context, uint64_t command, const char *labe
 }
 uint64_t metallum_device_info(void *context, uint32_t field) { return field == 0 ? 4096 : field == 1 ? 1048576 : 1; }
 void metallum_device_name(void *context, char *output, uint32_t capacity) { if (capacity) { strncpy(output, "Fixture Metal", capacity); output[capacity-1]=0; } }
+
+/* Distinct values validate every diagnostics field across Java FFM. */
+void metallum_diagnostics_snapshot(void *context, uint64_t *out) {
+    (void)context; for (uint64_t i = 0; i < 14; ++i) out[i] = 100 + i;
+}

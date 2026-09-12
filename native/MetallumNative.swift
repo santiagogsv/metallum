@@ -2,6 +2,7 @@ import Foundation
 import Metal
 
 final class DeviceContext {
+    let counters = RendererCounters()
     var shaderLibraries: [String: any MTLLibrary] = [:]
     var resources: [UInt64: AnyObject] = [:]
     var nextResourceID: UInt64 = 1
@@ -17,7 +18,7 @@ final class DeviceContext {
     var idleCommandSlots: [CommandSlot] = []
     func acquireCommandSlot() throws -> CommandSlot {
         if let slot = idleCommandSlots.popLast() { return slot }
-        return try CommandSlot(device: device)
+        return try CommandSlot(device: device, counters: counters)
     }
     func recycleCommandSlot(_ slot: CommandSlot) {
         slot.reset()
@@ -40,7 +41,7 @@ final class DeviceContext {
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 14 }
+public func metallumABIVersion() -> UInt32 { 15 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {

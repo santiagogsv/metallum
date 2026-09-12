@@ -11,6 +11,10 @@ public final class NativeDeviceSmoke {
         for (int i = 0; i < 100; i++) {
             NativeMetalDevice device = new NativeMetalDevice(library);
             try (device) {
+                if (args.length > 1 && !device.diagnostics().equals(new NativeMetalDevice.Diagnostics(
+                        100,101,102,103,104,105,106,107,108,109,110,111,112,113))) {
+                    throw new AssertionError("Diagnostics FFM field mapping changed");
+                }
                 if (device.borrowedDevice().address() == 0) throw new AssertionError("Null borrowed device");
                 String shader = "#include <metal_stdlib>\nusing namespace metal;\nkernel void first() {}\nkernel void second() {}";
                 try (var first = device.compileFunction(shader, "first"); var second = device.compileFunction(shader, "second")) {
@@ -173,7 +177,7 @@ public final class NativeDeviceSmoke {
         if (args.length > 1) {
             try { new NativeMetalDevice(Path.of(args[1])); throw new AssertionError("Old ABI accepted"); }
             catch (IllegalStateException expected) {
-                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 14")) {
+                if (expected.getCause() == null || !expected.getCause().getMessage().contains("Expected Metallum native ABI 15")) {
                     throw new AssertionError("Unexpected ABI error", expected);
                 }
             }

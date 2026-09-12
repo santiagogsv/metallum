@@ -4,6 +4,28 @@ import Metal
 @main
 struct ResourceDescriptorSmoke {
     static func main() {
+        precondition(RendererCounters.duration(start: 1, end: 1.25) == 250_000_000)
+        for (start, end) in [(0.0, 1.0), (2.0, 1.0), (Double.nan, 2), (1, Double.infinity)] {
+            precondition(RendererCounters.duration(start: start, end: end) == nil)
+        }
+        let counters = RendererCounters()
+        counters.record(10); counters.record(nil); counters.record(30)
+        precondition(counters.drain() == [3, 2, 40, 30, 0, 0, 0])
+        precondition(counters.drain() == Array(repeating: 0, count: 7))
+        var bindings = BindingValues(count: 31)
+        precondition(!bindings.update(0, index: 30))
+        precondition(bindings.update(123, index: 30))
+        precondition(!bindings.update(123, index: 30))
+        precondition(bindings.update(456, index: 30))
+        precondition(bindings.update(0, index: 30))
+        precondition(!bindings.update(0, index: 30))
+        let timed = SubmissionCompletion()
+        timed.finish(start: 1, end: 1.25)
+        precondition(timed.wait(milliseconds: 0) && timed.gpuNanoseconds == 250_000_000)
+        let gpuFailed = SubmissionCompletion()
+        gpuFailed.finish(error: "GPU failure", start: 1, end: 2)
+        precondition(gpuFailed.wait(milliseconds: 0) && gpuFailed.gpuNanoseconds == nil)
+
         // Reproduces the macOS 27 queue descriptor lifetime crash without a GPU.
         // Both successful and throwing creation must relinquish the borrowed queue.
         for throwing in [false, true] {

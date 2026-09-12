@@ -111,12 +111,20 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
 
         transientMemory.rotate();
         destroyQueue.rotate();
-        if (Boolean.getBoolean("metallum.memoryDiagnostics") && System.nanoTime() >= nextMemoryReport) {
+        if ((Boolean.getBoolean("metallum.memoryDiagnostics") || Boolean.getBoolean("metallum.performanceDiagnostics")) && System.nanoTime() >= nextMemoryReport) {
             nextMemoryReport = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             var memory = device.nativeOwner().memoryStats();
             com.metallum.Metallum.LOGGER.info("[metallum-memory] buffers={}, resources={}, libraries={}, bufferMiB={}, metalMiB={}, idlePoolMiB={}",
                     memory.buffers(), memory.resources(), memory.libraries(), memory.bufferBytes() / 1048576,
                     memory.metalBytes() / 1048576, dynamicBackingPool.bytes() / 1048576);
+            var stats = device.nativeOwner().diagnostics();
+            String gpu = stats.timed() == 0 ? "unavailable" : String.format(java.util.Locale.ROOT,
+                    "avg %.3f ms, max %.3f ms", stats.gpuTotalNs() / (stats.timed() * 1_000_000.0), stats.gpuMaxNs() / 1_000_000.0);
+            com.metallum.Metallum.LOGGER.info("[metallum-performance] retiredSubmissions={}, timedSubmissions={}, gpuExecution={}, cpuWaitTotalMs={}, bindingWrites={}, skippedBindings={}",
+                    stats.completed(), stats.timed(), gpu, stats.cpuWaitNs() / 1_000_000.0, stats.bindingWrites(), stats.bindingSkips());
+            com.metallum.Metallum.LOGGER.info("[metallum-command-memory] activeSlots={}, idleSlots={}, stagingKiB={}, allocatorMiB={}, heldReferences={}, activeResidency={}, idleResidency={}",
+                    stats.activeSlots(), stats.idleSlots(), stats.stagingBytes() / 1024, stats.allocatorBytes() / 1048576.0,
+                    stats.heldReferences(), stats.activeResidency(), stats.idleResidency());
         }
     }
 

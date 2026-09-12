@@ -9,7 +9,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 14);
+        assert(metallum_abi_version() == 15);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -190,11 +190,19 @@ int main(void) {
             metallum_resource_destroy(context, render_submission);
             metallum_resource_destroy(context, render_command);
             metallum_resource_destroy(context, render_texture);
+            uint64_t diagnostics[14];
+            metallum_diagnostics_snapshot(context, diagnostics); // Drain earlier work.
             uint64_t command = metallum_command_buffer_create(context, "Native command");
             uint64_t submission = metallum_submit(context, command);
             assert(submission);
             assert(metallum_submission_wait(context, submission, 5000, shader_error, sizeof(shader_error)) == 1);
             assert(metallum_submission_wait(context, submission, 0, shader_error, sizeof(shader_error)) == 1);
+            metallum_diagnostics_snapshot(context, diagnostics);
+            assert(diagnostics[0] == 1 && diagnostics[1] <= 1);
+            assert(diagnostics[7] == 0 && diagnostics[8] <= 3 && diagnostics[11] == 0);
+            assert(metallum_submission_wait(context, submission, 0, shader_error, sizeof(shader_error)) == 1);
+            metallum_diagnostics_snapshot(context, diagnostics);
+            assert(diagnostics[0] == 0 && diagnostics[4] == 0); // Already-retired wait is free.
             metallum_resource_destroy(context, submission);
             metallum_resource_destroy(context, command);
             command = metallum_command_buffer_create(context, NULL);

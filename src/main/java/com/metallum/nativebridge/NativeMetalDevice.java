@@ -21,7 +21,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
-    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, layerCreate, layerConfigure, present, renderBytes, textureInfo, commandDebug, deviceInfo, deviceName;
+    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, diagnosticsSnapshot, submit, submissionWait, commandCreate, fenceCreate, copyPass, renderPassCreate, renderCommand, layerCreate, layerConfigure, present, renderBytes, textureInfo, commandDebug, deviceInfo, deviceName;
     // Reused only on the confined render thread; calls consume the words synchronously.
     private final MemorySegment drawWords = arena.allocate(64, 8);
     private final MethodHandle deviceBorrow;
@@ -34,7 +34,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 14) throw new IllegalStateException("Expected Metallum native ABI 14, found " + abiVersion);
+            if (abiVersion != 15) throw new IllegalStateException("Expected Metallum native ABI 15, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             deviceBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -58,6 +58,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             depthCreate = linker.downcallHandle(symbols.findOrThrow("metallum_depth_state_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_INT));
             presentSamplerCreate = linker.downcallHandle(symbols.findOrThrow("metallum_present_sampler_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT));
             bufferTextureCreate = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_texture_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG));
+            diagnosticsSnapshot = linker.downcallHandle(symbols.findOrThrow("metallum_diagnostics_snapshot"), FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
             memorySnapshot = linker.downcallHandle(symbols.findOrThrow("metallum_memory_snapshot"), FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
             submit = linker.downcallHandle(symbols.findOrThrow("metallum_submit"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG));
             submissionWait = linker.downcallHandle(symbols.findOrThrow("metallum_submission_wait"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT));
@@ -164,6 +165,25 @@ public final class NativeMetalDevice implements AutoCloseable {
             return new MemoryStats(output.getAtIndex(JAVA_LONG, 0), output.getAtIndex(JAVA_LONG, 1),
                     output.getAtIndex(JAVA_LONG, 2), output.getAtIndex(JAVA_LONG, 3), output.getAtIndex(JAVA_LONG, 4));
         } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal memory", failure); }
+    }
+
+    public record Diagnostics(long completed, long timed, long gpuTotalNs, long gpuMaxNs, long cpuWaitNs,
+                              long bindingWrites, long bindingSkips, long activeSlots, long idleSlots,
+                              long stagingBytes, long allocatorBytes, long heldReferences,
+                              long activeResidency, long idleResidency) {}
+
+    /** Drains interval counters; memory values are current snapshots. Does not wait for GPU work. */
+    public Diagnostics diagnostics() {
+        checkOpen();
+        try (Arena call = Arena.ofConfined()) {
+            var out = call.allocate(JAVA_LONG, 14);
+            diagnosticsSnapshot.invokeExact(context, out);
+            return new Diagnostics(out.getAtIndex(JAVA_LONG, 0), out.getAtIndex(JAVA_LONG, 1),
+                    out.getAtIndex(JAVA_LONG, 2), out.getAtIndex(JAVA_LONG, 3), out.getAtIndex(JAVA_LONG, 4),
+                    out.getAtIndex(JAVA_LONG, 5), out.getAtIndex(JAVA_LONG, 6), out.getAtIndex(JAVA_LONG, 7),
+                    out.getAtIndex(JAVA_LONG, 8), out.getAtIndex(JAVA_LONG, 9), out.getAtIndex(JAVA_LONG, 10),
+                    out.getAtIndex(JAVA_LONG, 11), out.getAtIndex(JAVA_LONG, 12), out.getAtIndex(JAVA_LONG, 13));
+        } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal diagnostics", failure); }
     }
 
     public long deviceInfo(int field) {
