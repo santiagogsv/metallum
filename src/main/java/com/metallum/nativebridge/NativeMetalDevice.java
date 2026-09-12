@@ -21,7 +21,7 @@ public final class NativeMetalDevice implements AutoCloseable {
     private final MethodHandle bufferCreate, bufferBorrow, bufferContents, bufferDestroy;
     private final MethodHandle textureCreate, textureViewCreate, samplerCreate, resourceBorrow, resourceDestroy;
     private final MethodHandle functionCreate, shaderLibrariesClear, pipelineCreate;
-    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot;
+    private final MethodHandle depthCreate, presentSamplerCreate, bufferTextureCreate, memorySnapshot, submit, submissionWait;
     private final MemorySegment borrowedDevice;
     private MemorySegment context = MemorySegment.NULL;
     private boolean closed;
@@ -32,7 +32,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 7) throw new IllegalStateException("Expected Metallum native ABI 7, found " + abiVersion);
+            if (abiVersion != 8) throw new IllegalStateException("Expected Metallum native ABI 8, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             MethodHandle borrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -57,6 +57,8 @@ public final class NativeMetalDevice implements AutoCloseable {
             presentSamplerCreate = linker.downcallHandle(symbols.findOrThrow("metallum_present_sampler_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT));
             bufferTextureCreate = linker.downcallHandle(symbols.findOrThrow("metallum_buffer_texture_create"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG));
             memorySnapshot = linker.downcallHandle(symbols.findOrThrow("metallum_memory_snapshot"), FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+            submit = linker.downcallHandle(symbols.findOrThrow("metallum_submit"), FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS));
+            submissionWait = linker.downcallHandle(symbols.findOrThrow("metallum_submission_wait"), FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG, JAVA_LONG, ADDRESS, JAVA_INT));
             context = (MemorySegment) create.invokeExact();
             if (context.address() == 0) throw new IllegalStateException("Swift could not create a Metal device");
             try {
@@ -160,6 +162,23 @@ public final class NativeMetalDevice implements AutoCloseable {
             return new MemoryStats(output.getAtIndex(JAVA_LONG, 0), output.getAtIndex(JAVA_LONG, 1),
                     output.getAtIndex(JAVA_LONG, 2), output.getAtIndex(JAVA_LONG, 3), output.getAtIndex(JAVA_LONG, 4));
         } catch (Throwable failure) { throw new IllegalStateException("Cannot inspect Metal memory", failure); }
+    }
+
+    public Resource submit(MemorySegment command) {
+        checkOpen();
+        try { return ownResource((long) submit.invokeExact(context, command)); }
+        catch (Throwable failure) { throw new IllegalStateException("Cannot submit Metal command buffer", failure); }
+    }
+
+    public boolean waitSubmission(Resource submission, long timeoutMs) {
+        submission.checkResource();
+        if (submission.owner() != this) throw new IllegalArgumentException("Submission belongs to another device");
+        try (Arena call = Arena.ofConfined()) {
+            var error = call.allocate(4096);
+            int result = (int) submissionWait.invokeExact(context, submission.id, timeoutMs, error, 4096);
+            if (result < 0) throw new IllegalStateException(error.getString(0));
+            return result == 1;
+        } catch (Throwable failure) { throw new IllegalStateException("Metal submission wait failed", failure); }
     }
 
     public Resource createDepthState(long compare, boolean write) {

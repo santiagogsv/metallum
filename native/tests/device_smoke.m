@@ -8,7 +8,7 @@ _Static_assert(sizeof(MTLDrawIndexedPrimitivesIndirectArguments) == 20, "Metal i
 
 int main(void) {
     @autoreleasepool {
-        assert(metallum_abi_version() == 7);
+        assert(metallum_abi_version() == 8);
         assert(metallum_device_borrow_mtl(NULL) == NULL);
         metallum_device_destroy(NULL);
         for (int i = 0; i < 100; ++i) {
@@ -119,6 +119,18 @@ int main(void) {
             metallum_resource_destroy(context, texel);
             metallum_resource_destroy(context, depth);
             metallum_resource_destroy(context, present_sampler);
+            id<MTLCommandQueue> queue = [device newCommandQueue];
+            id<MTLCommandBuffer> command = [queue commandBuffer];
+            uint64_t submission = metallum_submit(context, (__bridge void *)command);
+            assert(submission);
+            assert(metallum_submission_wait(context, submission, 5000, shader_error, sizeof(shader_error)) == 1);
+            assert(metallum_submission_wait(context, submission, 0, shader_error, sizeof(shader_error)) == 1);
+            metallum_resource_destroy(context, submission);
+            command = [queue commandBuffer];
+            submission = metallum_submit(context, (__bridge void *)command);
+            assert(submission);
+            metallum_resource_destroy(context, submission); // Close safely joins without an explicit wait.
+            command = nil; queue = nil;
             // Device teardown owns this sampler as well as the private buffer.
             // Leave the private buffer alive to exercise device-owned cleanup.
             if (i == 0) printf("Native device: %s\n", device.name.UTF8String);

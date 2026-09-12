@@ -66,6 +66,11 @@ uint64_t metallum_buffer_texture_create(void *context, uint64_t buffer_id, uint6
  * cached libraries, owned buffer bytes, MTLDevice.currentAllocatedSize bytes.
  * Render thread only; counts may include aliased resources. */
 void metallum_memory_snapshot(void *context, uint64_t *output);
+/* ABI 8: submit borrows an uncommitted MTLCommandBuffer and returns an owned
+ * resource ID. Wait: 1 complete, 0 timeout, -1 error with UTF-8 diagnostic.
+ * Closing a submission joins GPU work and all completion handlers. */
+uint64_t metallum_submit(void *context, void *command_buffer);
+int32_t metallum_submission_wait(void *context, uint64_t submission, int64_t timeout_ms, char *error, uint32_t capacity);
 #ifdef __cplusplus
 }
 #endif

@@ -1,6 +1,7 @@
 package com.metallum.mtl;
 
 import com.metallum.objc.AutoreleasePool;
+import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.objc.Msg;
 import com.metallum.objc.ObjC;
 import net.fabricmc.api.EnvType;
@@ -15,22 +16,19 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 @Environment(EnvType.CLIENT)
 public final class MTLCommandBuffer {
-    private static final long STATUS_COMPLETED = 4;
-    private static final long STATUS_ERROR = 5;
 
     private static final Msg BLIT_COMMAND_ENCODER = Msg.of("blitCommandEncoder", ADDRESS);
     private static final Msg RENDER_COMMAND_ENCODER = Msg.of("renderCommandEncoderWithDescriptor:", ADDRESS, ADDRESS);
     private static final Msg PRESENT_DRAWABLE = Msg.ofVoid("presentDrawable:", ADDRESS);
-    private static final Msg COMMIT = Msg.ofVoid("commit");
-    private static final Msg ADD_COMPLETED_HANDLER = Msg.ofVoid("addCompletedHandler:", ADDRESS);
-    private static final Msg STATUS = Msg.of("status", JAVA_LONG);
-    private static final Msg WAIT_UNTIL_COMPLETED = Msg.ofVoid("waitUntilCompleted", true);
     private static final Msg PUSH_DEBUG_GROUP = Msg.ofVoid("pushDebugGroup:", ADDRESS);
     private static final Msg POP_DEBUG_GROUP = Msg.ofVoid("popDebugGroup");
 
     private MemorySegment handle;
+    private final NativeMetalDevice nativeDevice;
+    private NativeMetalDevice.Resource submission;
 
-    MTLCommandBuffer(final MemorySegment handle) {
+    MTLCommandBuffer(final MemorySegment handle, NativeMetalDevice nativeDevice) {
+        this.nativeDevice = nativeDevice;
         this.handle = handle;
     }
 
@@ -133,34 +131,13 @@ public final class MTLCommandBuffer {
     }
 
     public void commit() {
-        COMMIT.send(handle());
-    }
-
-    public void commitWithCompletionBlock(final MemorySegment completedHandlerBlock) {
-        ADD_COMPLETED_HANDLER.send(handle(), completedHandlerBlock);
-        COMMIT.send(handle());
-    }
-
-    public boolean isCompleted() {
-        if (ObjC.isNil(handle)) {
-            return true;
-        }
-        long status = STATUS.sendLong(handle);
-        return status == STATUS_COMPLETED || status == STATUS_ERROR;
+        if (submission != null) throw new IllegalStateException("Command buffer already submitted");
+        submission = nativeDevice.submit(handle());
     }
 
     public boolean waitUntilCompleted(final long timeoutMs) {
-        if (ObjC.isNil(handle)) {
-            return true;
-        }
-        if (isCompleted()) {
-            return true;
-        }
-        if (timeoutMs <= 0L) {
-            return false;
-        }
-        WAIT_UNTIL_COMPLETED.send(handle);
-        return isCompleted();
+        if (submission == null) throw new IllegalStateException("Command buffer is not submitted");
+        return nativeDevice.waitSubmission(submission, timeoutMs);
     }
 
     public void pushDebugGroup(final String label) {
@@ -179,6 +156,7 @@ public final class MTLCommandBuffer {
         if (ObjC.isNil(handle)) {
             return;
         }
+        if (submission != null) { submission.close(); submission = null; }
         ObjC.release(handle);
         handle = MemorySegment.NULL;
     }

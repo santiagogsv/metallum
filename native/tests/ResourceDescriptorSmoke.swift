@@ -83,6 +83,23 @@ struct ResourceDescriptorSmoke {
             precondition(sampler.minFilter == (linear ? .linear : .nearest) && sampler.magFilter == sampler.minFilter)
             precondition(sampler.mipFilter == .notMipmapped && sampler.sAddressMode == .clampToEdge && sampler.tAddressMode == .clampToEdge)
         }
+        let pending = SubmissionCompletion()
+        precondition(!pending.wait(milliseconds: 0))
+        precondition(!pending.wait(milliseconds: 1))
+        DispatchQueue.global().async { pending.finish() }
+        precondition(pending.wait(milliseconds: 1000))
+        precondition(pending.wait(milliseconds: 0))
+        precondition(pending.wait(milliseconds: Int64.max))
+        for _ in 0..<1000 {
+            weak var released: SubmissionCompletion?
+            do {
+                let completion = SubmissionCompletion()
+                released = completion
+                completion.finish()
+                precondition(completion.wait(milliseconds: 0))
+            }
+            precondition(released == nil)
+        }
         print("Swift Metal descriptor compatibility tests passed (no GPU required)")
     }
 }

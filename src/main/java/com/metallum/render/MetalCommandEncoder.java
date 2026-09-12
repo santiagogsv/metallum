@@ -2,7 +2,6 @@ package com.metallum.render;
 
 import com.metallum.mtl.*;
 import com.metallum.objc.ObjC;
-import com.metallum.objc.ObjCBlock;
 import com.mojang.blaze3d.buffers.GpuBuffer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.buffers.GpuFence;
@@ -20,7 +19,6 @@ import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 @Environment(EnvType.CLIENT)
@@ -29,8 +27,6 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     private final MetalDevice device;
     private long currentSubmitIndex = MAX_SUBMITS_IN_FLIGHT;
     private final InFlight[] inFlight = new InFlight[MAX_SUBMITS_IN_FLIGHT];
-    private final Semaphore[] submitSemaphores = new Semaphore[MAX_SUBMITS_IN_FLIGHT];
-    private final MemorySegment[] submitSignalBlocks = new MemorySegment[MAX_SUBMITS_IN_FLIGHT];
     private final MetalDestructionQueue destroyQueue = new MetalDestructionQueue(MAX_SUBMITS_IN_FLIGHT);
     private final MetalTransientMemory transientMemory;
     private final Map<MetalGpuTexture, Vector4fc> pendingColorClears = new IdentityHashMap<>();
@@ -52,11 +48,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         this.device = device;
         this.transientMemory = new MetalTransientMemory(device, this);
         fence = device.metalDevice().newFence();
-        for (int slot = 0; slot < MAX_SUBMITS_IN_FLIGHT; slot++) {
-            Semaphore semaphore = new Semaphore(0);
-            submitSemaphores[slot] = semaphore;
-            submitSignalBlocks[slot] = ObjCBlock.withRunnable(semaphore::release);
-        }
+
     }
 
     MTLCommandBuffer commandBuffer() {
@@ -106,8 +98,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             endEncoder();
 
             int slot = (int) (currentSubmitIndex % MAX_SUBMITS_IN_FLIGHT);
-            submitSemaphores[slot].drainPermits();
-            commandBuffer.commitWithCompletionBlock(submitSignalBlocks[slot]);
+            commandBuffer.commit();
 
             toClose = inFlight[slot];
             inFlight[slot] = new InFlight(currentSubmitIndex, commandBuffer);
@@ -552,16 +543,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         int slot = (int) (submitIndex % MAX_SUBMITS_IN_FLIGHT);
         InFlight f = inFlight[slot];
         if (f != null && f.index == submitIndex) {
-            Semaphore semaphore = submitSemaphores[slot];
-            try {
-                if (!semaphore.tryAcquire(Math.max(timeoutMs, 0L), TimeUnit.MILLISECONDS)) {
-                    return false;
-                }
-                semaphore.release();
-                return true;
-            } catch (InterruptedException e) {
-                throw new IllegalStateException("Render thread interrupted while waiting for Metal submit completion", e);
-            }
+            return f.buffer.waitUntilCompleted(timeoutMs);
         }
         return true;
     }

@@ -45,7 +45,7 @@ public record MTLDevice(MemorySegment handle, NativeMetalDevice nativeOwner) {
         if (ObjC.isNil(queue)) {
             throw new IllegalStateException("newCommandQueue returned nil");
         }
-        return new MTLCommandQueue(queue);
+        return new MTLCommandQueue(queue, nativeOwner);
     }
 
     public MTLFence newFence() {

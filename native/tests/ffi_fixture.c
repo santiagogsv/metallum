@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 7
+#define TEST_ABI_VERSION 8
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -141,4 +141,15 @@ void metallum_memory_snapshot(void *context, uint64_t *out) {
     for (uint64_t i = 1; i < c->next; ++i) if (c->buffers[i].data) out[0]++;
     for (uint64_t i = 1; i < c->next_resource; ++i) if (c->resources[i]) out[1]++;
     /* Fixture has no Metal allocator or library cache. */
+}
+
+uint64_t metallum_submit(void *context, void *command) {
+    if (!context || !command) return 0;
+    Resource *r = calloc(1, sizeof(Resource)); assert(r); r->kind = 6;
+    return store_resource(context, r);
+}
+int32_t metallum_submission_wait(void *context, uint64_t id, int64_t timeout, char *error, uint32_t capacity) {
+    Context *c = context;
+    if (error && capacity) error[0] = 0;
+    return c && id < 256 && c->resources[id] && c->resources[id]->kind == 6 ? 1 : -1;
 }

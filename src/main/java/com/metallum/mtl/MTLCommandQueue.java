@@ -1,6 +1,7 @@
 package com.metallum.mtl;
 
 import com.metallum.objc.AutoreleasePool;
+import com.metallum.nativebridge.NativeMetalDevice;
 import com.metallum.objc.Msg;
 import com.metallum.objc.ObjC;
 import net.fabricmc.api.EnvType;
@@ -19,8 +20,10 @@ public final class MTLCommandQueue {
     private static volatile boolean debugLabelsEnabled;
 
     private MemorySegment handle;
+    private final NativeMetalDevice nativeDevice;
 
-    MTLCommandQueue(final MemorySegment handle) {
+    MTLCommandQueue(final MemorySegment handle, NativeMetalDevice nativeDevice) {
+        this.nativeDevice = nativeDevice;
         this.handle = handle;
     }
 
@@ -46,7 +49,7 @@ public final class MTLCommandQueue {
                 SET_LABEL.send(commandBuffer, nsLabel);
                 ObjC.release(nsLabel);
             }
-            return new MTLCommandBuffer(ObjC.retain(commandBuffer));
+            return new MTLCommandBuffer(ObjC.retain(commandBuffer), nativeDevice);
         }
     }
 
