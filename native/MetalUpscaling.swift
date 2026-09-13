@@ -79,7 +79,6 @@ public func metallumUpscale(_ handle: UnsafeMutableRawPointer?, _ commandID: UIn
                     throw PipelineDescriptionError.invalid("Cannot create MetalFX copy encoder")
                 }
                 encoder.barrier(afterQueueStages: .all, beforeStages: .blit, visibilityOptions: .device)
-                encoder.waitForFence(fence, beforeEncoderStages: .blit)
                 encoder.copy(sourceTexture: from, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
                     sourceSize: MTLSize(width: from.width, height: from.height, depth: 1),
                     destinationTexture: to, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())

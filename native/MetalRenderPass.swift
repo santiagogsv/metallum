@@ -6,13 +6,20 @@ import Metal
 final class NativeRenderPass {
     let command: NativeCommand
     let encoder: any MTL4RenderCommandEncoder
-    var vertexBuffers = [MTLBuffer?](repeating: nil, count: 31)
-    var fragmentBuffers = [MTLBuffer?](repeating: nil, count: 31)
-    init(command: NativeCommand, encoder: any MTL4RenderCommandEncoder) {
+    let hasColor: Bool
+    let hasDepth: Bool
+    var colorStoreAction: MTLStoreAction = .store
+    var depthStoreAction: MTLStoreAction = .store
+    init(command: NativeCommand, encoder: any MTL4RenderCommandEncoder, hasColor: Bool, hasDepth: Bool) {
         self.command = command
         self.encoder = encoder
+        self.hasColor = hasColor; self.hasDepth = hasDepth
     }
-    deinit { encoder.endEncoding(); command.encoderOpen = false }
+    deinit {
+        if hasColor { encoder.setColorStoreAction(colorStoreAction, index: 0) }
+        if hasDepth { encoder.setDepthStoreAction(depthStoreAction) }
+        encoder.endEncoding(); command.encoderOpen = false
+    }
 }
 
 struct RenderPassPolicy {
@@ -22,10 +29,10 @@ struct RenderPassPolicy {
               let depthAction = MTLLoadAction(rawValue: UInt(depthLoad)) else { return nil }
         let descriptor = MTL4RenderPassDescriptor()
         descriptor.colorAttachments[0].loadAction = colorAction
-        descriptor.colorAttachments[0].storeAction = .store
+        descriptor.colorAttachments[0].storeAction = .unknown
         descriptor.colorAttachments[0].clearColor = MTLClearColor(red: clear[0], green: clear[1], blue: clear[2], alpha: clear[3])
         descriptor.depthAttachment.loadAction = depthAction
-        descriptor.depthAttachment.storeAction = .store
+        descriptor.depthAttachment.storeAction = .unknown
         descriptor.depthAttachment.clearDepth = clear[4]
         descriptor.stencilAttachment.loadAction = .dontCare
         descriptor.stencilAttachment.storeAction = .dontCare
@@ -63,6 +70,6 @@ public func metallumRenderPassCreate(_ handle: UnsafeMutableRawPointer?, _ comma
         encoder.barrier(afterQueueStages: .all, beforeStages: [.vertex, .fragment], visibilityOptions: .device)
         command.encoderOpen = true
         command.hold(context.resources[color]); command.hold(context.resources[depth])
-        return context.storeResource(NativeRenderPass(command: command, encoder: encoder))
+        return context.storeResource(NativeRenderPass(command: command, encoder: encoder, hasColor: color != 0, hasDepth: depth != 0))
     }
 }

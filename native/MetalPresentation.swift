@@ -57,11 +57,10 @@ public func metallumPresent(_ handle: UnsafeMutableRawPointer?, _ commandID: UIn
         descriptor.colorAttachments[0].loadAction = .dontCare
         descriptor.colorAttachments[0].storeAction = .store
         guard let encoder = command.metal.makeRenderCommandEncoder(descriptor: descriptor) else { return 0 }
-        if let fence { encoder.waitForFence(fence, beforeEncoderStages: .fragment) }
         encoder.setViewport(MTLViewport(originX: 0, originY: 0, width: Double(target.width), height: Double(target.height), znear: 0, zfar: 1))
         encoder.setRenderPipelineState(state)
         command.resetBindings()
-        encoder.barrier(afterQueueStages: .all, beforeStages: [.vertex, .fragment], visibilityOptions: .device)
+        encoder.barrier(afterQueueStages: .all, beforeStages: .fragment, visibilityOptions: .device)
         encoder.setArgumentTable(command.vertex.metal, stages: .vertex)
         encoder.setArgumentTable(command.fragment.metal, stages: .fragment)
         command.fragment.setTexture(texture.gpuResourceID, index: 0)

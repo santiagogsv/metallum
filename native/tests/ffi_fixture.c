@@ -8,7 +8,7 @@ typedef struct { void *data; int shared; uint64_t length; } Buffer;
 typedef struct { int kind, mips, references; } Resource;
 typedef struct { uint64_t next, next_resource; Buffer buffers[256]; Resource *resources[256]; } Context;
 #ifndef TEST_ABI_VERSION
-#define TEST_ABI_VERSION 19
+#define TEST_ABI_VERSION 20
 #endif
 uint32_t metallum_abi_version(void) { return TEST_ABI_VERSION; }
 void *metallum_device_create(void) { Context *c = calloc(1, sizeof(Context)); c->next = 1; c->next_resource = 1; return c; }
@@ -193,7 +193,7 @@ static int64_t last_render[11];
 void metallum_test_last_render(int64_t *out) { memcpy(out, last_render, sizeof(last_render)); }
 int32_t metallum_render_command(void *context, uint64_t pass, uint32_t op, uint64_t p0, uint64_t p1, const int64_t *words) {
     Context *c = context;
-    if (!c || pass >= 256 || !c->resources[pass] || c->resources[pass]->kind != 9 || !words || op > 22) return 0;
+    if (!c || pass >= 256 || !c->resources[pass] || c->resources[pass]->kind != 9 || !words || op > 25 || (op >= 6 && op <= 13)) return 0;
     last_render[0] = op; last_render[1] = (intptr_t)p0; last_render[2] = (intptr_t)p1;
     memcpy(last_render + 3, words, 8 * sizeof(int64_t));
     return 1;

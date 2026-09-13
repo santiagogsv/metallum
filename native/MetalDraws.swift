@@ -33,30 +33,31 @@ public func metallumRenderCommand(_ handle: UnsafeMutableRawPointer?, _ passID: 
         case 5:
             guard w[0] >= 0, let value = MTLTriangleFillMode(rawValue: UInt(w[0])) else { return 0 }
             e.setTriangleFillMode(value)
-        case 6, 7:
+        case 23:
             guard positive(0, 1), n(1) < 31 else { return 0 }
+            let stages = n(2)
+            guard (1...3).contains(stages) else { return 0 }
             let buffer = lookupBuffer(p0)
             guard p0 == 0 || buffer != nil, n(0) <= (buffer?.length ?? 0) else { return 0 }
-            let table = op == 6 ? pass.command.vertex : pass.command.fragment
-            if op == 6 { pass.vertexBuffers[n(1)] = buffer } else { pass.fragmentBuffers[n(1)] = buffer }
-            table.setAddress(buffer.map { $0.gpuAddress + UInt64(n(0)) } ?? 0, index: n(1))
-        case 8, 9:
-            guard positive(0, 1), n(1) < 31,
-                  let buffer = (op == 8 ? pass.vertexBuffers : pass.fragmentBuffers)[n(1)], n(0) <= buffer.length else { return 0 }
-            let table = op == 8 ? pass.command.vertex : pass.command.fragment
-            table.setAddress(buffer.gpuAddress + UInt64(n(0)), index: n(1))
-        case 10, 11:
+            let address = buffer.map { $0.gpuAddress + UInt64(n(0)) } ?? 0
+            if stages & 1 != 0 { pass.command.vertex.setAddress(address, index: n(1)) }
+            if stages & 2 != 0 { pass.command.fragment.setAddress(address, index: n(1)) }
+        case 24:
             guard positive(0), n(0) < 128 else { return 0 }
+            let stages = n(1)
+            guard (1...3).contains(stages), (0...1).contains(n(2)) else { return 0 }
             let texture = resource(p0, as: (any MTLTexture).self)
             guard p0 == 0 || texture != nil else { return 0 }
-            let table = op == 10 ? pass.command.vertex : pass.command.fragment
-            table.setTexture(texture?.gpuResourceID ?? MTLResourceID(), index: n(0))
-        case 12, 13:
-            guard positive(0), n(0) < 16 else { return 0 }
-            let sampler = resource(p0, as: (any MTLSamplerState).self)
-            guard p0 == 0 || sampler != nil else { return 0 }
-            let table = op == 12 ? pass.command.vertex : pass.command.fragment
-            table.setSamplerState(sampler?.gpuResourceID ?? MTLResourceID(), index: n(0))
+            let bindSampler = n(2) == 1
+            let sampler = bindSampler ? resource(p1, as: (any MTLSamplerState).self) : nil
+            guard !bindSampler || (n(0) < 16 && (p1 == 0 || sampler != nil)) else { return 0 }
+            func bind(_ table: StageBindings) {
+                table.setTexture(texture?.gpuResourceID ?? MTLResourceID(), index: n(0))
+                if bindSampler { table.setSamplerState(sampler?.gpuResourceID ?? MTLResourceID(), index: n(0)) }
+            }
+            if stages & 1 != 0 { bind(pass.command.vertex) }
+            if stages & 2 != 0 { bind(pass.command.fragment) }
+            if bindSampler { pass.command.hold(context.resources[p1]) }
         case 14:
             guard positive(0, 1, 2, 3) else { return 0 }
             e.setScissorRect(MTLScissorRect(x: n(0), y: n(1), width: n(2), height: n(3)))
@@ -96,9 +97,13 @@ public func metallumRenderCommand(_ handle: UnsafeMutableRawPointer?, _ passID: 
             if w[0] & 2 != 0 { stages.insert(.fragment) }
             if op == 21 { e.updateFence(fence, afterEncoderStages: stages) }
             else { e.waitForFence(fence, beforeEncoderStages: stages) }
+        case 25:
+            guard (0...1).contains(n(0)), (0...1).contains(n(1)) else { return 0 }
+            if n(0) == 1 { pass.colorStoreAction = .dontCare }
+            if n(1) == 1 { pass.depthStoreAction = .dontCare }
         default: return 0
         }
-        if [6, 7, 18, 19, 20].contains(op) { pass.command.hold(context.buffers[p0] as AnyObject?) }
+        if [18, 19, 20, 23].contains(op) { pass.command.hold(context.buffers[p0] as AnyObject?) }
         else { pass.command.hold(context.resources[p0]) }
         if op == 19 { pass.command.hold(context.buffers[p1] as AnyObject?) }
         return 1
@@ -112,7 +117,6 @@ public func metallumRenderBytes(_ handle: UnsafeMutableRawPointer?, _ id: UInt64
         guard let handle, let bytes, length <= 4096, index < 31,
               let pass = Unmanaged<DeviceContext>.fromOpaque(handle).takeUnretainedValue().resources[id] as? NativeRenderPass else { return 0 }
         guard let address = pass.command.inlineBytes(bytes, length: Int(length)) else { return 0 }
-        pass.vertexBuffers[Int(index)] = nil
         pass.command.vertex.setAddress(address, index: Int(index))
         return 1
     }

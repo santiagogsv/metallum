@@ -17,6 +17,7 @@ final class DeviceContext {
         }
     }()
     lazy var compiler: (any MTL4Compiler)? = try? device.makeCompiler(descriptor: MTL4CompilerDescriptor())
+    lazy var pipelineCache = PipelineCache(device: device)
     var idleCommandSlots: [CommandSlot] = []
     func acquireCommandSlot() throws -> CommandSlot {
         if let slot = idleCommandSlots.popLast() { return slot }
@@ -48,7 +49,7 @@ final class DeviceContext {
 }
 
 @c(metallum_abi_version)
-public func metallumABIVersion() -> UInt32 { 19 }
+public func metallumABIVersion() -> UInt32 { 20 }
 
 @c(metallum_device_create)
 public func metallumDeviceCreate() -> UnsafeMutableRawPointer? {

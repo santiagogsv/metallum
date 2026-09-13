@@ -25,6 +25,11 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     public static final int MAX_SUBMITS_IN_FLIGHT = 3;
     private final MetalDevice device;
     private long currentSubmitIndex = MAX_SUBMITS_IN_FLIGHT;
+    private long completedSubmitIndex = -1;
+    private long backingGeneration;
+    long submitIndex() { return currentSubmitIndex; }
+    long completedSubmitIndex() { return completedSubmitIndex; }
+    long backingGeneration() { return backingGeneration; }
     private final InFlight[] inFlight = new InFlight[MAX_SUBMITS_IN_FLIGHT];
     private final MetalDestructionQueue destroyQueue = new MetalDestructionQueue(MAX_SUBMITS_IN_FLIGHT);
     private final MetalTransientMemory transientMemory;
@@ -154,6 +159,11 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             return enc;
         }
 
+        if (currentEncoder instanceof MTLRenderCommandEncoder previous) {
+            // A load-clear in the next pass replaces these exact subresources completely.
+            previous.discardAttachments(clearColor != null && MetalPipelineSupport.sameResource(renderColorAttachment, colorAttachment),
+                    clearDepth != null && MetalPipelineSupport.sameResource(renderDepthAttachment, depthAttachment));
+        }
         endEncoder();
         MTLRenderCommandEncoder encoder = commandBuffer().makeRenderCommandEncoder(
                 colorAttachment,
@@ -163,7 +173,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 viewportWidth,
                 viewportHeight
         );
-        encoder.waitForFence(fence, MTLRenderStages.VertexAndFragment);
+        // Native queue consumer barrier already covers all preceding passes/submissions.
         currentEncoder = encoder;
         renderColorAttachment = colorAttachment;
         renderDepthAttachment = depthAttachment;
@@ -314,6 +324,10 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
     public void writeToBuffer(final GpuBufferSlice destination, final ByteBuffer data) {
         MetalGpuBuffer buffer = (MetalGpuBuffer) destination.buffer();
         int length = data.remaining();
+        if (buffer.isClosed() || destination.offset() < 0 || length > destination.length()
+                || destination.offset() > buffer.size() || length > buffer.size() - destination.offset())
+            throw new IllegalArgumentException("Invalid buffer upload range");
+        if (length == 0) return;
 
         if (buffer.isDynamic()) {
             orphanWrite(buffer, destination.offset(), data);
@@ -335,14 +349,20 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
 
     private void orphanWrite(final MetalGpuBuffer buffer, final long offset, final ByteBuffer data) {
         long size = buffer.allocationSize();
-        MTLBuffer old = buffer.metalBuffer();
+        if (buffer.canWriteInPlace()) {
+            buffer.writeDirect(offset, data);
+            return;
+        }
+        MTLBuffer old = buffer.backing();
         MTLBuffer fresh = acquireDynamicBacking(size);
         ByteBuffer freshStorage = fresh.contents().reinterpret(size).asByteBuffer().order(ByteOrder.nativeOrder());
 
         if (offset != 0 || data.remaining() != buffer.size()) {
             ByteBuffer previous = buffer.currentStorage();
-            previous.clear();
-            freshStorage.duplicate().put(previous);
+            // Preserve only the bytes outside the replacement range, not padding or overwritten bytes.
+            int start = Math.toIntExact(offset), end = Math.toIntExact(offset + data.remaining());
+            freshStorage.duplicate().put(previous.slice(0, start));
+            freshStorage.duplicate().position(end).put(previous.slice(end, Math.toIntExact(buffer.size()) - end));
         }
 
         ByteBuffer dst = freshStorage.duplicate().order(ByteOrder.nativeOrder());
@@ -350,6 +370,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         dst.put(data.duplicate());
 
         buffer.swapBacking(fresh, freshStorage);
+        backingGeneration++;
         recycleDynamicBacking(old, size);
     }
 
@@ -549,7 +570,16 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
         int slot = (int) (submitIndex % MAX_SUBMITS_IN_FLIGHT);
         InFlight f = inFlight[slot];
         if (f != null && f.index == submitIndex) {
-            return f.buffer.waitUntilCompleted(timeoutMs);
+            boolean complete = f.buffer.waitUntilCompleted(timeoutMs);
+            if (complete) {
+                f.completed = true;
+                long through = currentSubmitIndex - 1;
+                for (InFlight pending : inFlight) {
+                    if (pending != null && !pending.completed) through = Math.min(through, pending.index - 1);
+                }
+                completedSubmitIndex = Math.max(completedSubmitIndex, through);
+            }
+            return complete;
         }
         return true;
     }
@@ -614,6 +644,11 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
             return;
         }
 
+        if (currentEncoder instanceof MTLRenderCommandEncoder previous) {
+            // A load-clear in the next pass replaces these exact subresources completely.
+            previous.discardAttachments(colorClear != null && MetalPipelineSupport.sameResource(renderColorAttachment, texture.nativeResource()),
+                    depthClear != null && MetalPipelineSupport.sameResource(renderDepthAttachment, texture.nativeResource()));
+        }
         endEncoder();
         MTLRenderCommandEncoder encoder = commandBuffer().makeRenderCommandEncoder(
                 colorClear != null ? texture.nativeResource() : null,
@@ -622,7 +657,7 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 depthClear,
                 1.0, 1.0
         );
-        encoder.waitForFence(fence, MTLRenderStages.VertexAndFragment);
+        // Native queue consumer barrier already covers all preceding passes/submissions.
         currentEncoder = encoder;
         texture.recordMaterializedClear(colorClear, depthClear);
     }
@@ -649,6 +684,10 @@ final class MetalCommandEncoder implements CommandEncoderBackend {
                 && height == depth.getHeight(0);
     }
 
-    private record InFlight(long index, MTLCommandBuffer buffer) {
+    private static final class InFlight {
+        final long index;
+        final MTLCommandBuffer buffer;
+        boolean completed;
+        InFlight(long index, MTLCommandBuffer buffer) { this.index = index; this.buffer = buffer; }
     }
 }

@@ -101,6 +101,10 @@ uint64_t metallum_render_pass_create(void *context, uint64_t command, uint64_t c
  * using the buffer table for buffer operations. Zero unbinds nullable resources.
  * Inline bytes use metallum_render_bytes. See MetalDraws.swift.
  * Returns 1 on success, 0 for invalid IDs/opcodes/arguments. */
+/* ABI 20 replaces obsolete binding ops 6-13 with:
+ * 23: buffer p0, words = offset, index, stage mask (vertex=1, fragment=2).
+ * 24: texture p0, sampler p1, words = index, stage mask, bind sampler (0/1).
+ * 25: discard attachments, words = color (0/1), depth (0/1). */
 int32_t metallum_render_command(void *context, uint64_t pass, uint32_t op, uint64_t p0, uint64_t p1, const int64_t *words);
 /* ABI 17: indexed batch, consumed synchronously, at most 256 records.
  * words: primitive, index type, instance count, base instance (four int64_t).

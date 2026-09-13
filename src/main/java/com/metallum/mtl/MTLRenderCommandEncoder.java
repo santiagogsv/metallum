@@ -56,36 +56,17 @@ public final class MTLRenderCommandEncoder extends MTLCommandEncoder {
         command(5, 0, 0, fillMode.value, 0, 0, 0, 0, 0, 0, 0);
     }
 
-    public void setVertexBuffer(final MTLBuffer buffer, final long offset, final long index) {
-        command(6, seg(buffer), 0, offset, index, 0, 0, 0, 0, 0, 0);
+    public void bindBuffer(MTLBuffer buffer, long offset, long index, int stages) {
+        command(23, seg(buffer), 0, offset, index, stages, 0, 0, 0, 0, 0);
     }
 
-    public void setFragmentBuffer(final MTLBuffer buffer, final long offset, final long index) {
-        command(7, seg(buffer), 0, offset, index, 0, 0, 0, 0, 0, 0);
+    public void bindTexture(NativeMetalDevice.Resource texture, NativeMetalDevice.Resource sampler,
+                            long index, int stages, boolean bindSampler) {
+        command(24, id(texture), id(sampler), index, stages, bindSampler ? 1 : 0, 0, 0, 0, 0, 0);
     }
 
-    public void setVertexBufferOffset(final long offset, final long index) {
-        command(8, 0, 0, offset, index, 0, 0, 0, 0, 0, 0);
-    }
-
-    public void setFragmentBufferOffset(final long offset, final long index) {
-        command(9, 0, 0, offset, index, 0, 0, 0, 0, 0, 0);
-    }
-
-    public void setVertexTexture(final NativeMetalDevice.Resource texture, final long index) {
-        command(10, id(texture), 0, index, 0, 0, 0, 0, 0, 0, 0);
-    }
-
-    public void setFragmentTexture(final NativeMetalDevice.Resource texture, final long index) {
-        command(11, id(texture), 0, index, 0, 0, 0, 0, 0, 0, 0);
-    }
-
-    public void setVertexSamplerState(final NativeMetalDevice.Resource sampler, final long index) {
-        command(12, id(sampler), 0, index, 0, 0, 0, 0, 0, 0, 0);
-    }
-
-    public void setFragmentSamplerState(final NativeMetalDevice.Resource sampler, final long index) {
-        command(13, id(sampler), 0, index, 0, 0, 0, 0, 0, 0, 0);
+    public void discardAttachments(boolean color, boolean depth) {
+        if (color || depth) command(25, 0, 0, color ? 1 : 0, depth ? 1 : 0, 0, 0, 0, 0, 0, 0);
     }
 
     public void setScissorRect(final long x, final long y, final long width, final long height) {

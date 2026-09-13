@@ -113,5 +113,6 @@ tasks.register('checkGpu', Exec) {
     environment 'METALLUM_TEST_CLASSPATH', sourceSets.main.runtimeClasspath.asPath
     environment 'JAVA_HOME', System.getProperty('java.home')
     environment 'MTL_DEBUG_LAYER', '1'
+    environment 'METALLUM_CACHE_DIR', file('build/native/pipeline-cache').absolutePath
     commandLine 'sh', 'native/tests/smoke.sh'
 }

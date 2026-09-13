@@ -1,5 +1,6 @@
 import Foundation
 import Metal
+import CryptoKit
 
 enum ShaderCompilation {
     static func options() -> MTLCompileOptions {
@@ -29,8 +30,10 @@ enum ShaderCompilation {
 final class NativeShaderFunction {
     let function: any MTLFunction
     let library: any MTLLibrary
-    init(function: any MTLFunction, library: any MTLLibrary) {
+    let cacheKey: String
+    init(function: any MTLFunction, library: any MTLLibrary, source: String) {
         self.function = function; self.library = library
+        self.cacheKey = SHA256.hash(data: Data(source.utf8)).description + ":" + function.name
     }
     func descriptor() -> MTL4LibraryFunctionDescriptor {
         let descriptor = MTL4LibraryFunctionDescriptor()
@@ -65,7 +68,7 @@ public func metallumFunctionCreate(_ handle: UnsafeMutableRawPointer?, _ source:
                 ShaderCompilation.writeError("MSL entry point not found: \(name)", to: errorOutput, capacity: errorCapacity)
                 return 0
             }
-            let id = context.storeResource(NativeShaderFunction(function: function, library: library))
+            let id = context.storeResource(NativeShaderFunction(function: function, library: library, source: msl))
             if id == 0 { ShaderCompilation.writeError("Native resource IDs exhausted", to: errorOutput, capacity: errorCapacity) }
             return id
         } catch {

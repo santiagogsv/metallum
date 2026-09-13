@@ -159,7 +159,6 @@ final class NativeCommand {
             throw PipelineDescriptionError.invalid("Cannot open Metal copy pass")
         }
         encoder.barrier(afterQueueStages: .all, beforeStages: .blit, visibilityOptions: .device)
-        encoder.waitForFence(fence, beforeEncoderStages: .blit)
         copyEncoder = encoder; copyFence = fence
         hold(fence as AnyObject)
         context?.counters.copyCommands &+= 1

@@ -43,14 +43,6 @@ public class RenderAdapterSmoke {
                 check(() -> encoder.setFrontFacingWinding(MTLWinding.CounterClockwise), 3, 0, 0, 1);
                 check(() -> encoder.setCullMode(MTLCullMode.Back), 4, 0, 0, 2);
                 check(() -> encoder.setTriangleFillMode(MTLTriangleFillMode.Lines), 5, 0, 0, 1);
-                check(() -> encoder.setVertexBuffer(buffer, 8, 3), 6, buffer.nativeOwner().id(device), 0, 8, 3);
-                check(() -> encoder.setFragmentBuffer(buffer, 16, 2), 7, buffer.nativeOwner().id(device), 0, 16, 2);
-                check(() -> encoder.setVertexBufferOffset(24, 3), 8, 0, 0, 24, 3);
-                check(() -> encoder.setFragmentBufferOffset(32, 2), 9, 0, 0, 32, 2);
-                check(() -> encoder.setVertexTexture(ptr, 4), 10, ptr.id(device), 0, 4);
-                check(() -> encoder.setFragmentTexture(ptr, 5), 11, ptr.id(device), 0, 5);
-                check(() -> encoder.setVertexSamplerState(ptr, 6), 12, ptr.id(device), 0, 6);
-                check(() -> encoder.setFragmentSamplerState(ptr, 7), 13, ptr.id(device), 0, 7);
                 check(() -> encoder.setScissorRect(1, 2, 6, 5), 14, 0, 0, 1, 2, 6, 5);
                 check(() -> encoder.setViewport(0.25, 0.5, 8, 7, 0, 1), 15, 0, 0, bits(0.25), bits(0.5), bits(8), bits(7), bits(0), bits(1));
                 check(() -> encoder.setVertexBytes(output, 16, 2), 16, output.address(), 0, 16, 2);
@@ -60,6 +52,18 @@ public class RenderAdapterSmoke {
                 check(() -> encoder.drawPrimitivesIndirect(MTLPrimitiveType.Triangle, indirect, 16, 4), 20, indirect.nativeOwner().id(device), 0, 3, 16, 4);
                 check(() -> encoder.updateFence(fence, MTLRenderStages.Fragment), 21, fence.owner().id(device), 0, 2);
                 check(() -> encoder.waitForFence(fence, MTLRenderStages.VertexAndFragment), 22, fence.owner().id(device), 0, 3);
+                check(() -> encoder.bindBuffer(buffer, 8, 3, 1), 23, buffer.nativeOwner().id(device), 0, 8, 3, 1);
+                check(() -> encoder.bindBuffer(buffer, 16, 2, 2), 23, buffer.nativeOwner().id(device), 0, 16, 2, 2);
+                check(() -> encoder.bindBuffer(buffer, 12, 2, 3), 23, buffer.nativeOwner().id(device), 0, 12, 2, 3);
+                check(() -> encoder.bindTexture(ptr, ptr, 4, 3, true), 24, ptr.id(device), ptr.id(device), 4, 3, 1);
+                check(() -> encoder.bindTexture(ptr, null, 7, 1, false), 24, ptr.id(device), 0, 7, 1, 0);
+                check(() -> encoder.discardAttachments(true, false), 25, 0, 0, 1, 0);
+                var view = buffer.nativeOwner().cachedTexture(70, 0, 4, 16);
+                if (view != buffer.nativeOwner().cachedTexture(70, 0, 4, 16)) throw new AssertionError("Texel view not reused");
+                var replacement = buffer.nativeOwner().cachedTexture(70, 16, 4, 16);
+                if (view == replacement) throw new AssertionError("Texel range change was ignored");
+                try { view.id(device); throw new AssertionError("Evicted view handle stayed open"); }
+                catch (IllegalStateException expected) { }
                 var symbols = SymbolLookup.libraryLookup(fixture, arena);
                 var clearSnapshot = Linker.nativeLinker().downcallHandle(symbols.findOrThrow("metallum_test_last_clear"), FunctionDescriptor.ofVoid(ADDRESS));
                 // Render words and pass clears share scratch: interleave integer and double payloads.
@@ -125,7 +129,7 @@ public class RenderAdapterSmoke {
                     }
                 } finally { copyCommand.close(); }
                 encoder.endEncoding(); encoder.endEncoding();
-                try { encoder.setVertexTexture(ptr, 0); throw new AssertionError("Closed pass accepted"); }
+                try { encoder.bindTexture(ptr, null, 0, 1, false); throw new AssertionError("Closed pass accepted"); }
                 catch (IllegalStateException expected) { }
                 try (var layer = new CAMetalLayer(new MTLDevice(device), 2)) {
                     layer.configure(1708, 960, false);

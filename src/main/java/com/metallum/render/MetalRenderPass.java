@@ -50,6 +50,7 @@ final class MetalRenderPass implements RenderPassBackend {
     private final HashMap<String, GpuBufferSlice> uniforms = new HashMap<>();
     private final HashMap<String, TextureViewAndSampler> samplers = new HashMap<>();
     private long dirtyDescriptorMask;
+    private long backingGeneration = -1;
     @Nullable
     private MetalCompiledRenderPipeline compiledPipeline;
     @Nullable
@@ -133,8 +134,10 @@ final class MetalRenderPass implements RenderPassBackend {
 
     @Override
     public void setUniform(final @NonNull String name, final @NonNull GpuBufferSlice value) {
-        uniforms.put(name, value);
-        markDescriptorDirty(name);
+        if (!sameSlice(uniforms.get(name), value)) {
+            uniforms.put(name, value);
+            markDescriptorDirty(name);
+        }
     }
 
     @Override
@@ -269,9 +272,7 @@ final class MetalRenderPass implements RenderPassBackend {
             }
 
             MTLRenderCommandEncoder enc = renderEncoder();
-            if (scissorDirty || vertexBuffersDirty || dirtyDescriptorMask != 0L || pipelineDirty) {
-                bindDrawState(enc);
-            }
+            bindDrawState(enc);
             MetalGpuBuffer nativeIndexBuffer = (MetalGpuBuffer) indexBuffer;
             drawIndexedNative(enc, nativeIndexBuffer, draw.firstIndex(), draw.indexCount(), draw.baseVertex(), 1, drawIndexType, 0);
         }
@@ -385,7 +386,7 @@ final class MetalRenderPass implements RenderPassBackend {
 
             MetalGpuBuffer nativeVertexBuffer = (MetalGpuBuffer) vertexBuffer.buffer();
             int metalSlot = firstSlot + slot;
-            enc.setVertexBuffer(nativeVertexBuffer.metalBuffer(), vertexBuffer.offset(), metalSlot);
+            enc.bindBuffer(nativeVertexBuffer.metalBuffer(), vertexBuffer.offset(), metalSlot, 1);
         }
     }
 
@@ -453,35 +454,6 @@ final class MetalRenderPass implements RenderPassBackend {
         }
     }
 
-    private static void bindBuffer(final MTLRenderCommandEncoder enc, final MTLBuffer buffer, final long offset, final long index, final int stageMask) {
-        if ((stageMask & MetalCompiledRenderPipeline.STAGE_VERTEX) != 0) {
-            enc.setVertexBuffer(buffer, offset, index);
-        }
-        if ((stageMask & MetalCompiledRenderPipeline.STAGE_FRAGMENT) != 0) {
-            enc.setFragmentBuffer(buffer, offset, index);
-        }
-    }
-
-    private static void bindTexture(final MTLRenderCommandEncoder enc, final NativeMetalDevice.Resource texture, final long index, final int stageMask) {
-        if ((stageMask & MetalCompiledRenderPipeline.STAGE_VERTEX) != 0) {
-            enc.setVertexTexture(texture, index);
-        }
-        if ((stageMask & MetalCompiledRenderPipeline.STAGE_FRAGMENT) != 0) {
-            enc.setFragmentTexture(texture, index);
-        }
-    }
-
-    private static void bindTextureAndSampler(final MTLRenderCommandEncoder enc, final NativeMetalDevice.Resource texture, final NativeMetalDevice.Resource sampler, final long index, final int stageMask) {
-        if ((stageMask & MetalCompiledRenderPipeline.STAGE_VERTEX) != 0) {
-            enc.setVertexTexture(texture, index);
-            enc.setVertexSamplerState(sampler, index);
-        }
-        if ((stageMask & MetalCompiledRenderPipeline.STAGE_FRAGMENT) != 0) {
-            enc.setFragmentTexture(texture, index);
-            enc.setFragmentSamplerState(sampler, index);
-        }
-    }
-
     private static int readIndex(final MemorySegment indices, final int index, final MTLIndexType indexType) {
         if (indexType == MTLIndexType.UInt16) {
             return Short.toUnsignedInt(indices.get(ValueLayout.JAVA_SHORT_UNALIGNED, index * 2L));
@@ -492,6 +464,14 @@ final class MetalRenderPass implements RenderPassBackend {
     private void bindDrawState(final MTLRenderCommandEncoder enc) {
         if (compiledPipeline == null) {
             throw new IllegalStateException("Pipeline is missing");
+        }
+
+        // Replacing backing invalidates bindings even when Minecraft reuses the same slice object.
+        long generation = commandEncoder.backingGeneration();
+        if (backingGeneration != generation) {
+            backingGeneration = generation;
+            vertexBuffersDirty = true;
+            dirtyDescriptorMask |= compiledPipeline.allResourceMask();
         }
 
         if (pipelineDirty) {
@@ -597,7 +577,7 @@ final class MetalRenderPass implements RenderPassBackend {
 
             MetalGpuTextureView textureView = (MetalGpuTextureView) textureBinding.textureView();
             MetalGpuSampler sampler = (MetalGpuSampler) textureBinding.sampler();
-            bindTextureAndSampler(enc, textureView.nativeResource(), sampler.nativeResource(), binding.bindingIndex(), binding.stageMask());
+            enc.bindTexture(textureView.nativeResource(), sampler.nativeResource(), binding.bindingIndex(), binding.stageMask(), true);
             return;
         }
 
@@ -615,7 +595,7 @@ final class MetalRenderPass implements RenderPassBackend {
         }
 
         MetalGpuBuffer uniformBuffer = (MetalGpuBuffer) uniformSlice.buffer();
-        bindBuffer(enc, uniformBuffer.metalBuffer(), uniformSlice.offset(), binding.bindingIndex(), binding.stageMask());
+        enc.bindBuffer(uniformBuffer.metalBuffer(), uniformSlice.offset(), binding.bindingIndex(), binding.stageMask());
     }
 
     private void pushTexelBufferDescriptor(final MTLRenderCommandEncoder enc, final MetalCompiledRenderPipeline.ResourceBinding binding) {
@@ -640,10 +620,9 @@ final class MetalRenderPass implements RenderPassBackend {
             throw new IllegalStateException("Texel buffer " + binding.name() + " length " + texelByteLength + " is not a valid " + texelFormat + " range");
         }
         long texelCount = texelByteLength / pixelSize;
-        var texture = texelBuffer.metalBuffer().nativeOwner().createTexture(pixelFormat, texelSlice.offset(), texelCount, texelByteLength);
-        // Retire after submitted work, including when binding fails.
-        commandEncoder.queueForDestroy(texture::close);
-        bindTexture(enc, texture, binding.bindingIndex(), binding.stageMask());
+        var texture = texelBuffer.metalBuffer().nativeOwner().cachedTexture(pixelFormat, texelSlice.offset(), texelCount, texelByteLength);
+        // The backing owns one cached view; native commands retain views they use through completion.
+        enc.bindTexture(texture, null, binding.bindingIndex(), binding.stageMask(), false);
     }
 
     record TextureViewAndSampler(GpuTextureView textureView, GpuSampler sampler) {

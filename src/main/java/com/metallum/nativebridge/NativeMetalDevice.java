@@ -38,7 +38,7 @@ public final class NativeMetalDevice implements AutoCloseable {
             Linker linker = Linker.nativeLinker();
             MethodHandle version = linker.downcallHandle(symbols.findOrThrow("metallum_abi_version"), FunctionDescriptor.of(JAVA_INT));
             int abiVersion = (int) version.invokeExact();
-            if (abiVersion != 19) throw new IllegalStateException("Expected Metallum native ABI 19, found " + abiVersion);
+            if (abiVersion != 20) throw new IllegalStateException("Expected Metallum native ABI 20, found " + abiVersion);
             MethodHandle create = linker.downcallHandle(symbols.findOrThrow("metallum_device_create"), FunctionDescriptor.of(ADDRESS));
             deviceBorrow = linker.downcallHandle(symbols.findOrThrow("metallum_device_borrow_mtl"), FunctionDescriptor.of(ADDRESS, ADDRESS));
             destroy = linker.downcallHandle(symbols.findOrThrow("metallum_device_destroy"), FunctionDescriptor.ofVoid(ADDRESS));
@@ -426,6 +426,20 @@ public final class NativeMetalDevice implements AutoCloseable {
         private final long id;
         private final long length;
         private boolean released;
+        private Resource texelView;
+        private long viewFormat, viewOffset, viewWidth, viewLength;
+
+        /** Borrowed view, owned by this backing; at most one cached view per buffer. */
+        public Resource cachedTexture(long format, long offset, long width, long byteLength) {
+            checkBuffer();
+            if (texelView != null && viewFormat == format && viewOffset == offset
+                    && viewWidth == width && viewLength == byteLength) return texelView;
+            Resource fresh = createTexture(format, offset, width, byteLength);
+            if (texelView != null) texelView.close();
+            texelView = fresh;
+            viewFormat = format; viewOffset = offset; viewWidth = width; viewLength = byteLength;
+            return fresh;
+        }
 
         private Buffer(long id, long length) {
             this.id = id;
@@ -465,6 +479,7 @@ public final class NativeMetalDevice implements AutoCloseable {
         public void close() {
             checkThread();
             if (released) return;
+            if (texelView != null) { texelView.close(); texelView = null; }
             if (!closed) {
                 try { bufferDestroy.invokeExact(context, id); }
                 catch (Throwable failure) { throw new IllegalStateException("Cannot destroy Metal buffer", failure); }

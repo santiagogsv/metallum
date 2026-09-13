@@ -23,6 +23,7 @@ class MetalGpuBuffer extends GpuBuffer {
     @Nullable
     private ByteBuffer storage;
     private boolean closed;
+    private long lastGpuUse = -1;
 
     MetalGpuBuffer(final MetalDevice device, @GpuBuffer.Usage final int usage, final long size) {
         super(usage, size);
@@ -72,12 +73,21 @@ class MetalGpuBuffer extends GpuBuffer {
     }
 
     MTLBuffer metalBuffer() {
+        lastGpuUse = device.createCommandEncoder().submitIndex();
+        return backing();
+    }
+
+    MTLBuffer backing() {
         if (this.nativeBuffer == null) {
             throw new IllegalStateException("Native Metal buffer is closed");
         }
         return this.nativeBuffer;
     }
 
+
+    boolean canWriteInPlace() {
+        return lastGpuUse <= device.createCommandEncoder().completedSubmitIndex();
+    }
 
     boolean isDynamic() {
         return this.dynamic;
@@ -105,6 +115,7 @@ class MetalGpuBuffer extends GpuBuffer {
     void swapBacking(final MTLBuffer buffer, final ByteBuffer storage) {
         this.nativeBuffer = buffer;
         this.storage = storage;
+        this.lastGpuUse = -1;
     }
 
     @Override

@@ -3,7 +3,41 @@ import Metal
 
 @main
 struct ResourceDescriptorSmoke {
+    static func checkPipelineCache() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { fatalError("GPU unavailable") }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("metallum-cache-test-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = "#include <metal_stdlib>\nusing namespace metal; vertex float4 vs(uint i [[vertex_id]]) { return float4(0,0,0,1); } fragment float4 fs() { return float4(1); }"
+        let library = try device.makeLibrary(source: source, options: ShaderCompilation.options())
+        let descriptor = MTL4RenderPipelineDescriptor()
+        descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
+        let vertex = MTL4LibraryFunctionDescriptor(); vertex.library = library; vertex.name = "vs"
+        let fragment = MTL4LibraryFunctionDescriptor(); fragment.library = library; fragment.name = "fs"
+        descriptor.vertexFunctionDescriptor = vertex; descriptor.fragmentFunctionDescriptor = fragment
+        let cold = PipelineCache(device: device, cacheRoot: root)
+        _ = try cold.make(descriptor, key: "source-and-descriptor-A")
+        precondition(cold.misses == 1 && cold.hits == 0)
+        let warm = PipelineCache(device: device, cacheRoot: root)
+        _ = try warm.make(descriptor, key: "source-and-descriptor-A")
+        precondition(warm.hits == 1 && warm.misses == 0, "Archive did not survive compiler/context recreation")
+        try Data("damaged archive".utf8).write(to: warm.archiveURL(for: "source-and-descriptor-A"), options: .atomic)
+        _ = try warm.make(descriptor, key: "source-and-descriptor-A")
+        precondition(warm.misses == 1, "Damaged archive did not fall back to compilation")
+        _ = try warm.make(descriptor, key: "source-and-descriptor-B")
+        precondition(warm.misses == 2, "Different source/configuration reused the old key")
+        // A cache location that is a regular file must not prevent rendering.
+        let blocked = root.appendingPathComponent("not-a-directory")
+        try Data().write(to: blocked)
+        let unavailable = PipelineCache(device: device, cacheRoot: blocked)
+        _ = try unavailable.make(descriptor, key: "A")
+        print("Metal 4 archives passed cold/warm recreation, corruption, key invalidation and unavailable-cache checks")
+    }
+
     static func main() {
+        if ProcessInfo.processInfo.environment["METALLUM_GPU_TESTS"] == "1" {
+            try! checkPipelineCache()
+            return
+        }
         let limit: UInt64 = 64 * 1024 * 1024
         precondition(CommandStoragePolicy.keep(bytes: limit, reuses: 120))
         precondition(CommandStoragePolicy.keep(bytes: limit + 1, reuses: 119))
@@ -60,7 +94,7 @@ struct ResourceDescriptorSmoke {
             let pass = RenderPassPolicy.descriptor(colorLoad: load, depthLoad: load, clear: [0.1, 0.2, 0.3, 0.4, 0.75])!
             precondition(pass.colorAttachments[0].loadAction.rawValue == UInt(load))
             precondition(pass.depthAttachment.loadAction.rawValue == UInt(load))
-            precondition(pass.colorAttachments[0].storeAction == .store && pass.depthAttachment.storeAction == .store)
+            precondition(pass.colorAttachments[0].storeAction == .unknown && pass.depthAttachment.storeAction == .unknown)
             precondition(pass.colorAttachments[0].clearColor.alpha == 0.4 && pass.depthAttachment.clearDepth == 0.75)
             precondition(pass.stencilAttachment.loadAction == .dontCare && pass.stencilAttachment.storeAction == .dontCare)
         }
